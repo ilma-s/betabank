@@ -1,0 +1,135 @@
+[
+  {
+    "transactionId": "TX635769",
+    "bookingDateTime": "2024-12-15T22:06:18.544193",
+    "valueDateTime": "2024-12-11T22:06:18.544291",
+    "transactionAmount": {
+      "amount": "112.22",
+      "currency": "EUR"
+    },
+    "creditorName": "Apple Store",
+    "creditorAccount": {
+      "iban": "DE2033012232"
+    },
+    "debtorName": "Person7401",
+    "debtorAccount": {
+      "iban": "DE2915679930"
+    },
+    "remittanceInformationUnstructured": "Purchase at Apple Store",
+    "category": "Shopping"
+  },
+  {
+    "transactionId": "TX862695",
+    "bookingDateTime": "2025-01-02T22:06:18.544363",
+    "valueDateTime": "2024-12-31T22:06:18.544367",
+    "transactionAmount": {
+      "amount": "3187.25",
+      "currency": "EUR"
+    },
+    "creditorName": "",
+    "creditorAccount": {
+      "iban": "DE1554293668"
+    },
+    "debtorName": "Person8754",
+    "debtorAccount": {
+      "iban": "DE1702864281"
+    },
+    "remittanceInformationUnstructured": "Monthly salary payment",
+    "category": "Salary"
+  },
+  {
+    "transactionId": "TX654231",
+    "bookingDateTime": "2025-01-02T10:12:18.544744",
+    "valueDateTime": "2025-01-01T10:12:18.544744",
+    "transactionAmount": {
+      "amount": "145.67",
+      "currency": "EUR"
+    },
+    "creditorName": "Lidl",
+    "creditorAccount": {
+      "iban": "DE4042345678"
+    },
+    "debtorName": "Person5001",
+    "debtorAccount": {
+      "iban": "DE4445678901"
+    },
+    "remittanceInformationUnstructured": "Grocery shopping",
+    "category": "Groceries"
+  },
+  {
+    "transactionId": "TX585829",
+    "bookingDateTime": "2024-12-26T22:06:18.544554",
+    "valueDateTime": "2025-01-03T22:06:18.544557",
+    "transactionAmount": {
+      "amount": "276.6",
+      "currency": "EUR"
+    },
+    "creditorName": "",
+    "creditorAccount": {
+      "iban": "DE8177078321"
+    },
+    "debtorName": "Person8623",
+    "debtorAccount": {
+      "iban": "DE5243959874"
+    },
+    "remittanceInformationUnstructured": "Monthly bill payment - Internet",
+    "category": "Utilities"
+  },
+  {
+    "transactionId": "TX518573",
+    "bookingDateTime": "2024-12-19T22:06:18.544571",
+    "valueDateTime": "2025-01-09T22:06:18.544574",
+    "transactionAmount": {
+      "amount": "450.95",
+      "currency": "EUR"
+    },
+    "creditorName": "Apple Store",
+    "creditorAccount": {
+      "iban": "DE8714638426"
+    },
+    "debtorName": "Person4543",
+    "debtorAccount": {
+      "iban": "DE6544275187"
+    },
+    "remittanceInformationUnstructured": "Purchase at Apple Store",
+    "category": "Shopping"
+  },
+  {
+    "transactionId": "TX330146",
+    "bookingDateTime": "2024-12-21T22:06:18.544711",
+    "valueDateTime": "2024-12-24T22:06:18.544717",
+    "transactionAmount": {
+      "amount": "234.65",
+      "currency": "EUR"
+    },
+    "creditorName": "Zalando",
+    "creditorAccount": {
+      "iban": "DE2580469834"
+    },
+    "debtorName": "Person4456",
+    "debtorAccount": {
+      "iban": "DE6826251906"
+    },
+    "remittanceInformationUnstructured": "Purchase at Zalando",
+    "category": "Shopping"
+  },
+  {
+    "transactionId": "TX111197",
+    "bookingDateTime": "2025-01-03T15:45:37.062744",
+    "valueDateTime": "2025-01-03T15:45:37.062744",
+    "transactionAmount": {
+      "amount": "60.00",
+      "currency": "EUR"
+    },
+    "creditorName": "Netflix",
+    "creditorAccount": {
+      "iban": "DE1234567899"
+    },
+    "debtorName": "Person9876",
+    "debtorAccount": {
+      "iban": "DE1234567891"
+    },
+    "remittanceInformationUnstructured": "Subscription - Netflix",
+    "category": "Utilities"
+  }
+]

@@ -1,0 +1,135 @@
+[
+  {
+    "transactionId": "TX932794",
+    "bookingDateTime": "2024-12-26T22:07:37.062722",
+    "valueDateTime": "2024-12-31T22:07:37.062732",
+    "transactionAmount": {
+      "amount": "201.18",
+      "currency": "EUR"
+    },
+    "creditorName": "Vodafone",
+    "creditorAccount": {
+      "iban": "DE5759525106"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Monthly bill payment - Internet",
+    "category": "Utilities"
+  },
+  {
+    "transactionId": "TX136119",
+    "bookingDateTime": "2025-01-09T22:07:37.062744",
+    "valueDateTime": "2024-12-20T22:07:37.062745",
+    "transactionAmount": {
+      "amount": "7.99",
+      "currency": "EUR"
+    },
+    "creditorName": "Spotify",
+    "creditorAccount": {
+      "iban": "DE4260724881"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Monthly subscription fee - Spotify",
+    "category": "Subscriptions"
+  },  
+  {
+    "transactionId": "TX788334",
+    "bookingDateTime": "2024-12-20T22:07:37.062752",
+    "valueDateTime": "2024-12-25T22:07:37.062753",
+    "transactionAmount": {
+      "amount": "8855.87",
+      "currency": "EUR"
+    },
+    "creditorName": "Coinbase",
+    "creditorAccount": {
+      "iban": "DE7005343530"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Crypto transaction - Coinbase",
+    "category": "Crypto"
+  },
+  {
+    "transactionId": "TX538935",
+    "bookingDateTime": "2024-12-21T22:07:37.062769",
+    "valueDateTime": "2024-12-19T22:07:37.062771",
+    "transactionAmount": {
+      "amount": "3020.35",
+      "currency": "EUR"
+    },
+    "creditorName": "Deutsche Bank",
+    "creditorAccount": {
+      "iban": "DE9809640408"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Monthly salary payment",
+    "category": "Salary"
+  },
+  {
+    "transactionId": "TX654231",
+    "bookingDateTime": "2025-01-02T10:12:37.062744",
+    "valueDateTime": "2025-01-01T10:12:37.062744",
+    "transactionAmount": {
+      "amount": "150.45",
+      "currency": "EUR"
+    },
+    "creditorName": "Aldi",
+    "creditorAccount": {
+      "iban": "DE1112345678"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Grocery shopping",
+    "category": "Groceries"
+  },
+  {
+    "transactionId": "TX167234",
+    "bookingDateTime": "2025-01-04T15:45:37.062744",
+    "valueDateTime": "2025-01-03T15:45:37.062744",
+    "transactionAmount": {
+      "amount": "249.99",
+      "currency": "EUR"
+    },
+    "creditorName": "Zalando",
+    "creditorAccount": {
+      "iban": "DE1234554321"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Shopping - clothing",
+    "category": "Shopping"
+  },
+  {
+    "transactionId": "TX593936",
+    "bookingDateTime": "2025-01-06T22:07:37.062817",
+    "valueDateTime": "2024-12-15T22:07:37.062819",
+    "transactionAmount": {
+      "amount": "6343.19",
+      "currency": "EUR"
+    },
+    "creditorName": "Bitstamp",
+    "creditorAccount": {
+      "iban": "DE7922025835"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Crypto transaction - Bitstamp",
+    "category": "Crypto"
+  }
+]
