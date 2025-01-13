@@ -8,7 +8,7 @@ from scipy.stats import entropy
 
 class TransactionDataProcessor:
     def __init__(self):
-        self.scaler = MinMaxScaler()
+        self.scaler = MinMaxScaler() # initialize scaler for normalization; scale numerical values between 0 and 1
         self.numerical_columns = ['amount']
         self.categorical_columns = ['category']
         self.temporal_columns = ['bookingDateTime']
@@ -17,28 +17,79 @@ class TransactionDataProcessor:
         self.merchant_by_category = defaultdict(list)
         self.descriptions_by_category = defaultdict(list)
         self.amount_ranges_by_category = defaultdict(lambda: {'min': float('inf'), 'max': float('-inf')})
+        self.fixed_price_merchants = defaultdict(set)
+        self.merchant_frequency = defaultdict(lambda: defaultdict(list))  # track merchant transaction dates
         self.previous_batch = None
         self.VARIETY_THRESHOLD = 0.5
 
+    def validate_temporal_patterns(self, data):
+        """Validate temporal patterns in the data (salary and subscriptions/utilities payments)"""
+        # reset merchant frequency tracking
+        self.merchant_frequency.clear()
+        
+        # track transactions by merchant and month
+        for transaction in data:
+            merchant = transaction['creditorName']
+            category = transaction['category']
+            date = pd.to_datetime(transaction['bookingDateTime'])
+            month_key = f"{date.year}-{date.month}"
+            
+            # add transaction to merchant's monthly records
+            self.merchant_frequency[merchant][month_key].append({
+                'date': date,
+                'category': category,
+                'amount': float(transaction['transactionAmount']['amount'])
+            })
+        
+        issues = []
+        
+        # Check patterns
+        for merchant, monthly_transactions in self.merchant_frequency.items():
+            for month, transactions in monthly_transactions.items():
+                # group by category
+                category_counts = defaultdict(int)
+                for trans in transactions:
+                    category_counts[trans['category']] += 1
+                
+                # validate patterns
+                for category, count in category_counts.items():
+                    if category == "Salary" and count > 1:
+                        issues.append(f"Multiple salary payments from {merchant} in {month}")
+                    
+                    if category in ["Subscriptions", "Utilities"] and count > 1:
+                        issues.append(f"Multiple {category.lower()} payments to {merchant} in {month}")
+        
+        return issues
+
     def learn_patterns(self, data):
         """Learn patterns from training data"""
+        merchant_amounts = defaultdict(set)
+        
+        # first validate temporal patterns
+        issues = self.validate_temporal_patterns(data)
+        if issues:
+            print("Temporal pattern issues found:")
+            for issue in issues:
+                print(f"- {issue}")
+        
         for transaction in data:
             category = transaction['category']
             merchant = transaction['creditorName']
             description = transaction['remittanceInformationUnstructured']
             amount = float(transaction['transactionAmount']['amount'])
-
+            
             # learn merchant patterns if not empty
-            if merchant and merchant not in self.merchant_by_category[category]:
-                self.merchant_by_category[category].append(merchant)
-
+            if merchant:
+                if merchant not in self.merchant_by_category[category]:
+                    self.merchant_by_category[category].append(merchant)
+                merchant_amounts[merchant].add(amount)
+            
             # learn description patterns
             if description not in self.descriptions_by_category[category]:
-                # store the description template by replacing the merchant name with {}
                 if merchant:
                     description = description.replace(merchant, '{}')
                 self.descriptions_by_category[category].append(description)
-
+            
             # learn amount ranges
             self.amount_ranges_by_category[category]['min'] = min(
                 self.amount_ranges_by_category[category]['min'], 
@@ -48,6 +99,11 @@ class TransactionDataProcessor:
                 self.amount_ranges_by_category[category]['max'], 
                 amount
             )
+        
+        # update fixed price merchants
+        for merchant, amounts in merchant_amounts.items():
+            if len(amounts) == 1:  # if merchant only has one price
+                self.fixed_price_merchants[merchant] = amounts.pop()
 
     def load_data(self, filepath):
         """Load and process training data"""
@@ -86,7 +142,6 @@ class TransactionDataProcessor:
         """Generate transaction details based on learned patterns"""
         import random
         
-        # get merchants for this category
         merchants = self.merchant_by_category[category]
         descriptions = self.descriptions_by_category[category]
         
@@ -95,6 +150,10 @@ class TransactionDataProcessor:
             description = random.choice(descriptions) if descriptions else f"Transaction - {category}"
         else:
             merchant = random.choice(merchants)
+            # use fixed price if merchant has one
+            if merchant in self.fixed_price_merchants:
+                amount = self.fixed_price_merchants[merchant]
+            
             # find a description template that can accommodate the merchant
             valid_descriptions = [d for d in descriptions if '{}' in d]
             if valid_descriptions:
@@ -102,7 +161,7 @@ class TransactionDataProcessor:
             else:
                 description = f"Transaction at {merchant}"
             
-        return merchant, description
+        return merchant, description, amount
 
     def inverse_transform(self, generated_data):
         """Transform generated data back into transaction format"""
@@ -117,7 +176,7 @@ class TransactionDataProcessor:
             category = self.category_columns[category_idx].replace('category_', '')
             amount = abs(denormalized_data[i, 0])
             
-            merchant_name, description = self.generate_transaction_details(category, amount)
+            merchant_name, description, amount = self.generate_transaction_details(category, amount)
             
             timestamp = int(denormalized_data[i, 1])
             booking_date = datetime.fromtimestamp(timestamp)

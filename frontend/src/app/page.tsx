@@ -158,19 +158,19 @@ export default function Home() {
                 <div className="flex justify-end space-x-2 mb-4">
                   <Button
                     onClick={exportToJson}
-                    className="bg-gray-200 text-black px-3 py-2 rounded"
+                    className="bg-[#F1E6EA] text-black px-3 py-2 rounded"
                   >
                     Export to JSON
                   </Button>
                   <Button
                     onClick={exportToCsv}
-                    className="bg-gray-200 text-black px-3 py-2 rounded"
+                    className="bg-[#F1E6EA] text-black px-3 py-2 rounded"
                   >
                     Export to CSV
                   </Button>
                   <Button
                     onClick={exportToExcel}
-                    className="bg-gray-200 text-black px-3 py-2 rounded"
+                    className="bg-[#F1E6EA] text-black px-3 py-2 rounded"
                   >
                     Export to Excel
                   </Button>

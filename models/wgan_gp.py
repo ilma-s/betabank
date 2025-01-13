@@ -45,9 +45,9 @@ class WGAN_GP:
         self.c_optimizer = torch.optim.Adam(self.critic.parameters(), lr=1e-4, betas=(0.0, 0.9))
 
     def compute_gradient_penalty(self, real_samples, fake_samples):
-        alpha = torch.rand(real_samples.size(0), 1).to(self.device)
-        interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
-        d_interpolates = self.critic(interpolates)
+        alpha = torch.rand(real_samples.size(0), 1).to(self.device) # get random alpha for real - fake data ratio
+        interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True) # create mixed data
+        d_interpolates = self.critic(interpolates) # get critic's validity of mixed data
         gradients = autograd.grad(
             outputs=d_interpolates,
             inputs=interpolates,
@@ -55,8 +55,8 @@ class WGAN_GP:
             create_graph=True,
             retain_graph=True,
             only_inputs=True,
-        )[0]
-        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+        )[0] # calculate how much the critic's output scores would change if tiny changes were to the mixed samples, with grad_outputs as a scaling factor
+        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean() # calculate how far the gradients' lengths deviate from 1 and penalize any deviation
         return gradient_penalty
 
     def train_step(self, real_data, n_critic=5):
@@ -64,15 +64,15 @@ class WGAN_GP:
         
         # train the critic
         for _ in range(n_critic):
-            self.c_optimizer.zero_grad()
+            self.c_optimizer.zero_grad() # clear gradients
             
-            z = torch.randn(batch_size, self.generator.model[0].in_features).to(self.device)
-            fake_data = self.generator(z).detach()
+            z = torch.randn(batch_size, self.generator.model[0].in_features).to(self.device) # get random noise
+            fake_data = self.generator(z).detach() # take the random noise and generate fake data; detach to avoid backprop on generator
             
-            real_validity = self.critic(real_data)
-            fake_validity = self.critic(fake_data)
+            real_validity = self.critic(real_data) # get validity of real data; should be close to 1
+            fake_validity = self.critic(fake_data) # get validity of fake data; should be close to 0
             
-            gradient_penalty = self.compute_gradient_penalty(real_data, fake_data)
+            gradient_penalty = self.compute_gradient_penalty(real_data, fake_data) # compute gradient penalty
             
             c_loss = -torch.mean(real_validity) + torch.mean(fake_validity) + 10 * gradient_penalty
             c_loss.backward()
@@ -92,9 +92,9 @@ class WGAN_GP:
         return {'c_loss': c_loss.item(), 'g_loss': g_loss.item()}
 
     def generate(self, n_samples):
-        self.generator.eval()
-        with torch.no_grad():
-            z = torch.randn(n_samples, self.generator.model[0].in_features).to(self.device)
-            samples = self.generator(z)
-        self.generator.train()
+        self.generator.eval() # set generator to evaluation mode to disable training-specific features
+        with torch.no_grad(): # do not track gradients
+            z = torch.randn(n_samples, self.generator.model[0].in_features).to(self.device) # get random noise
+            samples = self.generator(z) # generate fake data; pass z to generator
+        self.generator.train() # set generator back to training mode in case there is more training to do
         return samples.cpu().numpy() 

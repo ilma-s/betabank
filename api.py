@@ -34,7 +34,7 @@ async def get_personas():
     return {"personas": [{"id": k, "name": k.replace("_", " ").title()} for k in PERSONAS.keys()]}
 
 @app.get("/generate/{persona_type}")
-async def generate_transactions(persona_type: str, n_samples: int = 10):
+async def generate_transactions(persona_type: str, n_samples: int = 20):
     if persona_type not in PERSONAS:
         raise HTTPException(status_code=404, detail="Persona not found")
     
@@ -48,7 +48,7 @@ async def generate_transactions(persona_type: str, n_samples: int = 10):
         if not model:
             logger.info(f"Training model for {persona_type}...")
             model = WGAN_GP(input_dim=100, output_dim=data_processor.output_dim)
-            tensor_data = torch.FloatTensor(processed_data)
+            tensor_data = torch.FloatTensor(processed_data) # convert to tensor for NN training
             for epoch in range(100):
                 stats = model.train_step(tensor_data)
                 if epoch % 10 == 0:

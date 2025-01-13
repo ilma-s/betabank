@@ -1,24 +1,5 @@
 [
   {
-    "transactionId": "TX635769",
-    "bookingDateTime": "2024-12-15T22:06:18.544193",
-    "valueDateTime": "2024-12-11T22:06:18.544291",
-    "transactionAmount": {
-      "amount": "112.22",
-      "currency": "EUR"
-    },
-    "creditorName": "Apple Store",
-    "creditorAccount": {
-      "iban": "DE2033012232"
-    },
-    "debtorName": "Person7401",
-    "debtorAccount": {
-      "iban": "DE2915679930"
-    },
-    "remittanceInformationUnstructured": "Purchase at Apple Store",
-    "category": "Shopping"
-  },
-  {
     "transactionId": "TX862695",
     "bookingDateTime": "2025-01-02T22:06:18.544363",
     "valueDateTime": "2024-12-31T22:06:18.544367",
@@ -26,110 +7,205 @@
       "amount": "3187.25",
       "currency": "EUR"
     },
-    "creditorName": "",
+    "creditorName": "Deutsche Bank",
     "creditorAccount": {
       "iban": "DE1554293668"
     },
-    "debtorName": "Person8754",
+    "debtorName": "John Doe",
     "debtorAccount": {
-      "iban": "DE1702864281"
+      "iban": "DE3449859559"
     },
     "remittanceInformationUnstructured": "Monthly salary payment",
     "category": "Salary"
   },
   {
     "transactionId": "TX654231",
-    "bookingDateTime": "2025-01-02T10:12:18.544744",
-    "valueDateTime": "2025-01-01T10:12:18.544744",
+    "bookingDateTime": "2025-01-01T18:21:20.000000",
+    "valueDateTime": "2025-01-01T18:21:20.000000",
     "transactionAmount": {
-      "amount": "145.67",
+      "amount": "9.99",
       "currency": "EUR"
     },
-    "creditorName": "Lidl",
+    "creditorName": "Netflix",
     "creditorAccount": {
-      "iban": "DE4042345678"
+      "iban": "DE3412345678"
     },
-    "debtorName": "Person5001",
+    "debtorName": "John Doe",
     "debtorAccount": {
-      "iban": "DE4445678901"
+      "iban": "DE3449859559"
     },
-    "remittanceInformationUnstructured": "Grocery shopping",
-    "category": "Groceries"
+    "remittanceInformationUnstructured": "Subscription - Netflix",
+    "category": "Subscriptions"
   },
   {
-    "transactionId": "TX585829",
-    "bookingDateTime": "2024-12-26T22:06:18.544554",
-    "valueDateTime": "2025-01-03T22:06:18.544557",
+    "transactionId": "TX654232",
+    "bookingDateTime": "2025-01-01T18:21:20.000000",
+    "valueDateTime": "2025-01-01T18:21:20.000000",
     "transactionAmount": {
-      "amount": "276.6",
+      "amount": "9.99",
       "currency": "EUR"
     },
-    "creditorName": "",
+    "creditorName": "Spotify",
     "creditorAccount": {
-      "iban": "DE8177078321"
+      "iban": "DE3412345679"
     },
-    "debtorName": "Person8623",
+    "debtorName": "John Doe",
     "debtorAccount": {
-      "iban": "DE5243959874"
+      "iban": "DE3449859559"
     },
-    "remittanceInformationUnstructured": "Monthly bill payment - Internet",
-    "category": "Utilities"
+    "remittanceInformationUnstructured": "Subscription - Spotify",
+    "category": "Subscriptions"
   },
   {
-    "transactionId": "TX518573",
-    "bookingDateTime": "2024-12-19T22:06:18.544571",
-    "valueDateTime": "2025-01-09T22:06:18.544574",
+    "transactionId": "TX635769",
+    "bookingDateTime": "2025-01-03T22:06:18.544193",
+    "valueDateTime": "2025-01-03T22:06:18.544291",
     "transactionAmount": {
-      "amount": "450.95",
+      "amount": "312.22",
       "currency": "EUR"
     },
     "creditorName": "Apple Store",
     "creditorAccount": {
-      "iban": "DE8714638426"
+      "iban": "DE2033012232"
     },
-    "debtorName": "Person4543",
+    "debtorName": "John Doe",
     "debtorAccount": {
-      "iban": "DE6544275187"
+      "iban": "DE3449859559"
     },
     "remittanceInformationUnstructured": "Purchase at Apple Store",
     "category": "Shopping"
   },
   {
-    "transactionId": "TX330146",
-    "bookingDateTime": "2024-12-21T22:06:18.544711",
-    "valueDateTime": "2024-12-24T22:06:18.544717",
+    "transactionId": "TX330147",
+    "bookingDateTime": "2025-01-04T15:06:18.544711",
+    "valueDateTime": "2025-01-04T15:06:18.544717",
     "transactionAmount": {
-      "amount": "234.65",
+      "amount": "156.78",
+      "currency": "EUR"
+    },
+    "creditorName": "ALDI",
+    "creditorAccount": {
+      "iban": "DE2580469835"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Purchase at ALDI",
+    "category": "Groceries"
+  },
+  {
+    "transactionId": "TX518573",
+    "bookingDateTime": "2025-01-05T22:06:18.544571",
+    "valueDateTime": "2025-01-05T22:06:18.544574",
+    "transactionAmount": {
+      "amount": "450.95",
       "currency": "EUR"
     },
     "creditorName": "Zalando",
     "creditorAccount": {
-      "iban": "DE2580469834"
+      "iban": "DE8714638426"
     },
-    "debtorName": "Person4456",
+    "debtorName": "John Doe",
     "debtorAccount": {
-      "iban": "DE6826251906"
+      "iban": "DE3449859559"
     },
     "remittanceInformationUnstructured": "Purchase at Zalando",
     "category": "Shopping"
   },
   {
-    "transactionId": "TX111197",
-    "bookingDateTime": "2025-01-03T15:45:37.062744",
-    "valueDateTime": "2025-01-03T15:45:37.062744",
+    "transactionId": "TX585829",
+    "bookingDateTime": "2025-01-06T22:06:18.544554",
+    "valueDateTime": "2025-01-06T22:06:18.544557",
     "transactionAmount": {
-      "amount": "60.00",
+      "amount": "89.99",
       "currency": "EUR"
     },
-    "creditorName": "Netflix",
+    "creditorName": "Vodafone",
     "creditorAccount": {
-      "iban": "DE1234567899"
+      "iban": "DE8177078321"
     },
-    "debtorName": "Person9876",
+    "debtorName": "John Doe",
     "debtorAccount": {
-      "iban": "DE1234567891"
+      "iban": "DE3449859559"
     },
-    "remittanceInformationUnstructured": "Subscription - Netflix",
+    "remittanceInformationUnstructured": "Monthly bill payment - Internet",
     "category": "Utilities"
+  },
+  {
+    "transactionId": "TX330148",
+    "bookingDateTime": "2025-01-08T16:06:18.544711",
+    "valueDateTime": "2025-01-08T16:06:18.544717",
+    "transactionAmount": {
+      "amount": "89.95",
+      "currency": "EUR"
+    },
+    "creditorName": "LIDL",
+    "creditorAccount": {
+      "iban": "DE2580469836"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Purchase at LIDL",
+    "category": "Groceries"
+  },
+  {
+    "transactionId": "TX330146",
+    "bookingDateTime": "2025-01-10T22:06:18.544711",
+    "valueDateTime": "2025-01-10T22:06:18.544717",
+    "transactionAmount": {
+      "amount": "534.65",
+      "currency": "EUR"
+    },
+    "creditorName": "H&M",
+    "creditorAccount": {
+      "iban": "DE2580469834"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Purchase at H&M",
+    "category": "Shopping"
+  },
+  {
+    "transactionId": "TX330150",
+    "bookingDateTime": "2025-01-14T11:06:18.544711",
+    "valueDateTime": "2025-01-14T11:06:18.544717",
+    "transactionAmount": {
+      "amount": "634.65",
+      "currency": "EUR"
+    },
+    "creditorName": "Zara",
+    "creditorAccount": {
+      "iban": "DE2580469838"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Purchase at Zara",
+    "category": "Shopping"
+  },
+  {
+    "transactionId": "TX330151",
+    "bookingDateTime": "2025-01-18T13:06:18.544711",
+    "valueDateTime": "2025-01-18T13:06:18.544717",
+    "transactionAmount": {
+      "amount": "834.65",
+      "currency": "EUR"
+    },
+    "creditorName": "Media Markt",
+    "creditorAccount": {
+      "iban": "DE2580469839"
+    },
+    "debtorName": "John Doe",
+    "debtorAccount": {
+      "iban": "DE3449859559"
+    },
+    "remittanceInformationUnstructured": "Purchase at Media Markt",
+    "category": "Shopping"
   }
 ]
