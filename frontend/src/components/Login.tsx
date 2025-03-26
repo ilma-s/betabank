@@ -16,9 +16,10 @@ export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!username || !password) {
@@ -26,10 +27,18 @@ export default function Login() {
       return;
     }
     
-    const success = login(username, password);
-    
-    if (!success) {
-      setError('Invalid credentials. Use admin/admin to login.');
+    setLoading(true);
+    try {
+      const success = await login(username, password);
+      
+      if (!success) {
+        setError('Invalid credentials. You can use admin/admin to login.');
+      }
+    } catch (error) {
+      setError('Login failed. Please try again.');
+      console.error(error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -51,7 +60,7 @@ export default function Login() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="bg-white border-gray-300"
-                placeholder="admin"
+                placeholder="Enter username"
               />
             </div>
             <div className="space-y-2">
@@ -62,12 +71,23 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="bg-white border-gray-300"
-                placeholder="admin"
+                placeholder="Enter password"
               />
             </div>
             {error && <p className="text-red-500 text-sm">{error}</p>}
-            <Button type="submit" className="w-full bg-[#261436] text-white">
-              Login
+            <Button 
+              type="submit" 
+              className="w-full bg-[#261436] text-white"
+              disabled={loading}
+            >
+              {loading ? (
+                <div className="flex items-center justify-center space-x-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  <span>Logging in...</span>
+                </div>
+              ) : (
+                "Login"
+              )}
             </Button>
           </form>
         </CardContent>

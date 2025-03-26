@@ -93,8 +93,15 @@ export function Select({ children, onValueChange, value }: SelectProps) {
   );
 }
 
-export function SelectTrigger({ children, className }: { children: React.ReactNode, className?: string }) {
-  return <div className={`cursor-pointer ${className || ''}`}>{children}</div>;
+export function SelectTrigger({ 
+  children, 
+  className, 
+  ...props 
+}: React.HTMLAttributes<HTMLDivElement> & { 
+  children: React.ReactNode, 
+  className?: string 
+}) {
+  return <div className={`cursor-pointer ${className || ''}`} {...props}>{children}</div>;
 }
 
 interface SelectContentProps {
