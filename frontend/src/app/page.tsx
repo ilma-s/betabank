@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Login from "@/components/Login";
+import { useAuth } from "@/context/AuthContext";
 import {
   Card,
   CardContent,
@@ -14,7 +16,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/@/components/ui/select";
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -29,7 +31,8 @@ import { Parser } from "json2csv";
 import * as XLSX from "xlsx";
 import { Transaction, Persona } from "@/types";
 
-export default function Home() {
+function Main() {
+  const { logout } = useAuth();
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [selectedPersona, setSelectedPersona] = useState<string>("");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -100,120 +103,122 @@ export default function Home() {
   if (error) return <div>Error loading transactions: {error}</div>;
 
   return (
-    <div className="bg-[#261436] min-h-screen flex items-center justify-center">
-      <div className="container mx-auto p-10">
-        <Card className="bg-[#F1E6EA] shadow-lg relative">
+    <div className="bg-[#261436] min-h-screen">
+      <div className="container mx-auto py-10">
+        <div className="flex justify-end mb-4">
+          <Button 
+            onClick={logout}
+            className="bg-[#F1E6EA] text-[#261436]"
+          >
+            Logout
+          </Button>
+        </div>
+        <Card className="bg-[#F1E6EA]">
           <CardHeader>
-            <CardTitle className="text-[#261436] text-lg font-bold">
+            <CardTitle className="text-[#261436]">
               Transaction Generator
             </CardTitle>
             <CardDescription className="text-[#261436]">
               Select a persona to generate sample transactions
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between space-x-4 mb-6">
-              <div className="relative">
-                <Select
-                  onValueChange={setSelectedPersona}
-                  value={selectedPersona}
-                >
-                  <SelectTrigger className="w-[180px] text-[#261436] border border-gray-300 rounded">
-                    <SelectValue
-                      placeholder="Select a persona"
-                      className="text-[#261436]"
-                    />
-                  </SelectTrigger>
-                  <SelectContent className="absolute z-10 bg-white shadow-lg rounded-md w-[180px]">
-                    {personas.map((persona) => (
-                      <SelectItem
-                        key={persona.id}
-                        value={persona.id}
-                        className="text-[#261436] px-4 py-2 hover:bg-gray-100"
-                      >
-                        {persona.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                onClick={generateTransactions}
-                disabled={!selectedPersona || loading}
-                className="bg-[#261436] text-white px-4 py-2 rounded"
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Select
+                onValueChange={setSelectedPersona}
+                value={selectedPersona}
               >
-                {loading ? (
-                  <div className="flex items-center space-x-2">
-                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-                    <span>Generating...</span>
-                  </div>
-                ) : (
-                  "Generate Transactions"
-                )}
-              </Button>
+                <SelectTrigger className="w-full bg-white text-[#261436] border border-gray-300 p-2 rounded">
+                  {selectedPersona ? 
+                    personas.find(p => p.id === selectedPersona)?.name || "Select a persona" 
+                    : "Select a persona"}
+                </SelectTrigger>
+                <SelectContent className="bg-white text-[#261436] border border-gray-300 mt-1 rounded shadow-lg w-full">
+                  {personas.map((persona) => (
+                    <SelectItem 
+                      key={persona.id} 
+                      value={persona.id}
+                      className="px-4 py-2 hover:bg-gray-100"
+                    >
+                      {persona.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
+            <Button
+              onClick={generateTransactions}
+              disabled={!selectedPersona || loading}
+              className="w-full bg-[#261436] text-white"
+            >
+              {loading ? (
+                <div className="flex items-center space-x-2">
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  <span>Generating...</span>
+                </div>
+              ) : (
+                "Generate Transactions"
+              )}
+            </Button>
+
             {transactions.length > 0 && (
-              <div>
-                <div className="flex justify-end space-x-2 mb-4">
-                  <Button
-                    onClick={exportToJson}
-                    className="bg-[#F1E6EA] text-black px-3 py-2 rounded"
-                  >
+              <>
+                <div className="flex space-x-2">
+                  <Button onClick={exportToJson} className="bg-[#261436] text-white">
                     Export to JSON
                   </Button>
-                  <Button
-                    onClick={exportToCsv}
-                    className="bg-[#F1E6EA] text-black px-3 py-2 rounded"
-                  >
+                  <Button onClick={exportToCsv} className="bg-[#261436] text-white">
                     Export to CSV
                   </Button>
-                  <Button
-                    onClick={exportToExcel}
-                    className="bg-[#F1E6EA] text-black px-3 py-2 rounded"
-                  >
+                  <Button onClick={exportToExcel} className="bg-[#261436] text-white">
                     Export to Excel
                   </Button>
                 </div>
-                <div className="overflow-x-auto">
-                  <Table className="min-w-full text-left text-[#261436] border border-gray-300">
-                    <TableHeader className="bg-gray-100">
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableHead className="px-4 py-2">Date</TableHead>
-                        <TableHead className="px-4 py-2">Amount</TableHead>
-                        <TableHead className="px-4 py-2">Description</TableHead>
-                        <TableHead className="px-4 py-2">To</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Amount</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>To</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {transactions.map((tx) => (
-                        <TableRow
-                          key={tx.transactionId}
-                          className="hover:bg-gray-50"
-                        >
-                          <TableCell className="px-4 py-2">
+                        <TableRow key={tx.transactionId}>
+                          <TableCell>
                             {new Date(tx.bookingDateTime).toLocaleDateString()}
                           </TableCell>
-                          <TableCell className="px-4 py-2">
+                          <TableCell>
                             {tx.transactionAmount.amount}{" "}
                             {tx.transactionAmount.currency}
                           </TableCell>
-                          <TableCell className="px-4 py-2">
+                          <TableCell>
                             {tx.remittanceInformationUnstructured}
                           </TableCell>
-                          <TableCell className="px-4 py-2">
-                            {tx.creditorName}
-                          </TableCell>
+                          <TableCell>{tx.creditorName}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </div>
-              </div>
+              </>
             )}
           </CardContent>
         </Card>
       </div>
     </div>
   );
+}
+
+export default function Page() {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  return <Main />;
 }
