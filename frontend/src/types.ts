@@ -32,5 +32,6 @@ export interface TransactionBatch {
   persona_name: string;
   created_at: string;
   transaction_count: number;
-  preview?: Transaction[];
+  preview: any;
+  months: number;
 } 

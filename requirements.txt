@@ -42,9 +42,7 @@ SQLAlchemy==2.0.36
 starlette==0.41.3
 sympy==1.13.1
 threadpoolctl==3.5.0
-torch==2.6.0.dev20241229
-torchaudio==2.6.0.dev20241229
-torchvision==0.22.0.dev20241229
+torch
 tqdm==4.67.1
 typing_extensions==4.12.2
 tzdata==2024.2

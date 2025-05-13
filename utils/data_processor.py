@@ -5,6 +5,8 @@ from datetime import datetime
 from sklearn.preprocessing import MinMaxScaler
 from collections import defaultdict
 from scipy.stats import entropy
+from collections import Counter
+import random
 
 class TransactionDataProcessor:
     def __init__(self):
@@ -105,38 +107,43 @@ class TransactionDataProcessor:
             if len(amounts) == 1:  # if merchant only has one price
                 self.fixed_price_merchants[merchant] = amounts.pop()
 
+    def balance_categories(self, data, target_count=None):
+        """Oversample rare categories so each has a similar number of samples."""
+        categories = [tx['category'] for tx in data]
+        counts = Counter(categories)
+        max_count = target_count or max(counts.values())
+        balanced = []
+        for cat in counts:
+            cat_txs = [tx for tx in data if tx['category'] == cat]
+            if len(cat_txs) < max_count:
+                cat_txs = cat_txs * (max_count // len(cat_txs)) + random.choices(cat_txs, k=max_count % len(cat_txs))
+            balanced.extend(cat_txs)
+        random.shuffle(balanced)
+        return balanced
+    
     def load_data(self, filepath):
-        """Load and process training data"""
         with open(filepath, 'r') as f:
             data = json.load(f)
-            
-        # learn patterns from the training data
+
+        data = self.balance_categories(data)
         self.learn_patterns(data)
         
         df = pd.DataFrame(data)
-        
-        # extract amount from nested structure
         df['amount'] = df['transactionAmount'].apply(lambda x: float(x['amount']))
-        
-        # convert datetime
         df['bookingDateTime'] = pd.to_datetime(df['bookingDateTime'])
         df['timestamp'] = df['bookingDateTime'].astype(np.int64) // 10**9
-        
-        # one-hot encode categories
+
+        # Encode and normalize
         category_dummies = pd.get_dummies(df['category'], prefix='category')
-        
-        # normalize numerical features
-        normalized_data = self.scaler.fit_transform(df[['amount', 'timestamp']])
-        
-        # combine features
-        processed_data = np.hstack([
-            normalized_data,
-            category_dummies.values
-        ])
-        
-        self.output_dim = processed_data.shape[1]
         self.category_columns = category_dummies.columns
-        return processed_data
+        self.condition_dim = category_dummies.shape[1]
+
+        normalized = self.scaler.fit_transform(df[['amount', 'timestamp']])
+        X = normalized
+        C = category_dummies.values
+
+        self.output_dim = X.shape[1]  # For critic input
+        return X, C
 
     def generate_transaction_details(self, category, amount):
         """Generate transaction details based on learned patterns"""
@@ -251,19 +258,94 @@ class TransactionDataProcessor:
         
         return np.sqrt(distance)
 
-    def check_transaction_variety(self, new_transactions):
-        """Check if new transactions are sufficiently different from the previous batch"""
-        if self.previous_batch is None:
-            self.previous_batch = new_transactions
-            return True
-        
-        new_features = self.calculate_batch_features(new_transactions)
-        prev_features = self.calculate_batch_features(self.previous_batch)
-        
-        distance = self.calculate_frechet_distance(new_features, prev_features)
-        
-        if distance < self.VARIETY_THRESHOLD:
+    def check_transaction_variety(self, transactions):
+        """Enhanced check for transaction variety including category distribution."""
+        if not transactions:
             return False
         
-        self.previous_batch = new_transactions
-        return True 
+        # Basic variety check: ensure at least 2 categories and at least 2 unique merchants
+        categories = set(tx['category'] for tx in transactions)
+        merchants = set(tx['creditorName'] for tx in transactions if tx['creditorName'])
+        if len(categories) < 2 or len(merchants) < 2:
+            return False
+        
+        # Check category distribution
+        category_dist = self.get_category_distribution(transactions)
+        if len(category_dist) < 5:  # Should have at least 5 different categories
+            return False
+        
+        # Check for reasonable distribution of amounts
+        amounts = [float(tx['transactionAmount']['amount']) for tx in transactions]
+        if max(amounts) / min(amounts) < 10:  # Should have at least 10x difference between min and max
+            return False
+        
+        return True
+
+    def get_category_distribution(self, transactions):
+        """Calculate the distribution of transaction categories."""
+        category_counts = {}
+        for tx in transactions:
+            category = tx.get('category', 'Unknown')
+            category_counts[category] = category_counts.get(category, 0) + 1
+        
+        total = len(transactions)
+        return {
+            category: {
+                'count': count,
+                'percentage': (count / total) * 100
+            }
+            for category, count in category_counts.items()
+        }
+
+    def ensure_category_distribution(self, persona_type):
+        """Get target distribution based on persona type."""
+        target_distributions = {
+            'gambling addict': {
+                'Gambling': {'min': 30, 'max': 40},
+                'Shopping': {'min': 10, 'max': 15},
+                'Dining': {'min': 10, 'max': 15},
+                'Transport': {'min': 5, 'max': 10},
+                'Groceries': {'min': 5, 'max': 10},
+                'Utilities': {'min': 5, 'max': 8},
+                'Subscriptions': {'min': 3, 'max': 5},
+                'ATM Withdrawals': {'min': 10, 'max': 15},
+                'Salary': {'min': 2, 'max': 4},
+                'Refunds': {'min': 1, 'max': 3}
+            },
+            'shopping addict': {
+                'Shopping': {'min': 35, 'max': 45},
+                'Dining': {'min': 10, 'max': 15},
+                'Transport': {'min': 5, 'max': 10},
+                'Groceries': {'min': 10, 'max': 15},
+                'Utilities': {'min': 5, 'max': 8},
+                'Subscriptions': {'min': 3, 'max': 5},
+                'ATM Withdrawals': {'min': 5, 'max': 10},
+                'Salary': {'min': 2, 'max': 4},
+                'Refunds': {'min': 3, 'max': 5}
+            },
+            'crypto enthusiast': {
+                'Crypto': {'min': 35, 'max': 45},
+                'Shopping': {'min': 10, 'max': 15},
+                'Dining': {'min': 5, 'max': 10},
+                'Transport': {'min': 5, 'max': 10},
+                'Groceries': {'min': 5, 'max': 10},
+                'Utilities': {'min': 5, 'max': 8},
+                'Subscriptions': {'min': 3, 'max': 5},
+                'ATM Withdrawals': {'min': 5, 'max': 10},
+                'Salary': {'min': 2, 'max': 4},
+                'Refunds': {'min': 1, 'max': 3}
+            },
+            'money mule': {
+                'ATM Withdrawals': {'min': 30, 'max': 40},
+                'Shopping': {'min': 15, 'max': 20},
+                'Dining': {'min': 5, 'max': 10},
+                'Transport': {'min': 5, 'max': 10},
+                'Groceries': {'min': 5, 'max': 10},
+                'Utilities': {'min': 5, 'max': 8},
+                'Subscriptions': {'min': 3, 'max': 5},
+                'Salary': {'min': 2, 'max': 4},
+                'Refunds': {'min': 1, 'max': 3}
+            }
+        }
+
+        return target_distributions.get(persona_type.lower(), {}) 

@@ -38,6 +38,7 @@ class TransactionBatch(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     persona_id = Column(Integer, ForeignKey("personas.id"))
     name = Column(String)
+    months = Column(Integer, nullable=True)  # Store the selected number of months
     summary_json = Column(JSON, nullable=True)
     preview_json = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

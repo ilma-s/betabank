@@ -32,7 +32,7 @@ export default function Login() {
       const success = await login(username, password);
       
       if (!success) {
-        setError('Invalid credentials. You can use admin/admin to login.');
+        setError('Invalid username or password. Please try again.');
       }
     } catch (error) {
       setError('Login failed. Please try again.');
