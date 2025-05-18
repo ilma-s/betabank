@@ -38,7 +38,7 @@ export const createPersonaWithDistribution = async (
   name: string,
   distribution: Record<string, number>
 ): Promise<{ id: number; message: string }> => {
-  const response = await fetch(`${API_BASE_URL}/personas`, {
+  const response = await fetch(`${API_BASE_URL}/create-persona`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -46,6 +46,7 @@ export const createPersonaWithDistribution = async (
     },
     body: JSON.stringify({
       name,
+      description: `Custom persona with defined distribution`,
       distribution,
     }),
   });
@@ -58,7 +59,7 @@ export const createPersonaWithDataset = async (
   description: string,
   dataset: any[]
 ): Promise<{ id: number; message: string }> => {
-  const response = await fetch(`${API_BASE_URL}/personas/dataset`, {
+  const response = await fetch(`${API_BASE_URL}/create-persona`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

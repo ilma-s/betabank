@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "./ui/badge";
+import { cn } from "@/lib/utils";
 
 interface Batch {
   id: number;
@@ -32,6 +33,7 @@ interface BatchListProps {
   onBatchDeleted: () => void;
   onBatchUpdated: () => void;
   token: string;
+  selectedBatchId?: number;
 }
 
 export function BatchList({
@@ -40,6 +42,7 @@ export function BatchList({
   onBatchDeleted,
   onBatchUpdated,
   token,
+  selectedBatchId,
 }: BatchListProps) {
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
   const { toast } = useToast();
@@ -256,46 +259,62 @@ export function BatchList({
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-2 overflow-y-auto h-[calc(100vh-16rem)]">
         {filteredBatches.map((batch) => (
           <div
             key={batch.id}
             onClick={() => onBatchClick(batch.id)}
-            className="p-3 rounded border cursor-pointer group bg-white text-[#261436] hover:bg-gray-100"
+            className={cn(
+              "p-4 rounded-lg cursor-pointer transition-all",
+              "hover:shadow-md",
+              selectedBatchId === batch.id 
+                ? "bg-[#261436] text-white" 
+                : "bg-white/30 text-[#261436]"
+            )}
           >
-            <div className="flex flex-col h-full">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-medium">{batch.name}</h3>
-                  <p className="text-sm opacity-80">{batch.persona_name}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={(e) => handleDelete(e, batch.id)}
-                    disabled={isDeleting === batch.id}
-                    className="p-1.5 rounded-full hover:bg-red-100 text-red-600 hover:text-red-800"
-                    title="Delete batch"
-                  >
-                    {isDeleting === batch.id ? (
-                      <span className="text-sm text-gray-500">Deleting...</span>
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <h3 className={cn(
+                  "font-medium mb-1",
+                  selectedBatchId === batch.id ? "text-white" : "text-[#261436]"
+                )}>{batch.name}</h3>
+                <p className={cn(
+                  "text-sm",
+                  selectedBatchId === batch.id ? "text-white/70" : "text-[#261436]/70"
+                )}>{batch.persona_name}</p>
+                <div className={cn(
+                  "flex items-center gap-2 mt-1 text-xs",
+                  selectedBatchId === batch.id ? "text-white/60" : "text-[#261436]/60"
+                )}>
+                  <span>{formatDate(batch.created_at)}</span>
+                  <span>•</span>
+                  <span>{batch.transaction_count} transactions</span>
                 </div>
               </div>
-              <div className="flex justify-between text-xs mt-2 opacity-80">
-                <span>{formatDate(batch.created_at)}</span>
-                <span>{batch.transaction_count} transactions</span>
-              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-8 w-8",
+                  selectedBatchId === batch.id 
+                    ? "text-white/50 hover:bg-white/10" 
+                    : "text-[#261436]/50 hover:bg-[#261436]/5"
+                )}
+                onClick={(e) => handleDelete(e, batch.id)}
+                disabled={isDeleting === batch.id}
+              >
+                {isDeleting === batch.id ? (
+                  <div className={cn(
+                    "h-4 w-4 animate-spin rounded-full border-2 border-t-transparent",
+                    selectedBatchId === batch.id ? "border-white" : "border-[#261436]"
+                  )} />
+                ) : (
+                  <Trash2 className="h-4 w-4" />
+                )}
+              </Button>
             </div>
           </div>
         ))}
-        {filteredBatches.length === 0 && (
-          <div className="text-center py-4 text-gray-500 text-sm">
-            {batches.length === 0 ? "No batches found" : "No batches match the filter criteria"}
-          </div>
-        )}
       </div>
     </div>
   );

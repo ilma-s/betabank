@@ -119,8 +119,8 @@ function Main() {
           ]);
 
           console.log("Initial data loaded successfully");
-          setPersonas(personasResponse.data.personas);
-          setBatches(batchesResponse.data.batches);
+          setPersonas(personasResponse.data);
+          setBatches(batchesResponse.data);
           setError(null);
         } catch (error: any) {
           console.error("Failed to load initial data:", error);
@@ -145,7 +145,7 @@ function Main() {
     try {
       console.log("Refreshing personas data");
       const response = await axios.get(`${API_BASE_URL}/personas`);
-      setPersonas(response.data.personas);
+      setPersonas(response.data);
     } catch (error: any) {
       console.error("Failed to fetch personas:", error);
       if (error.response && error.response.status !== 401) {
@@ -158,7 +158,7 @@ function Main() {
     try {
       console.log("Refreshing batches data");
       const response = await axios.get(`${API_BASE_URL}/batches`);
-      setBatches(response.data.batches);
+      setBatches(response.data);
     } catch (error: any) {
       console.error("Failed to fetch batches:", error);
       if (error.response && error.response.status !== 401) {
@@ -175,12 +175,9 @@ function Main() {
     try {
       const response = await axios.post(
         `${API_BASE_URL}/generate/${selectedPersona}`,
-        null,
         {
-          params: {
-            batch_name: batchName || undefined,
-            months: parseInt(selectedMonths),
-          },
+          batch_name: batchName || undefined,
+          months: parseInt(selectedMonths),
         }
       );
       console.log("Successfully generated transactions");
@@ -189,15 +186,12 @@ function Main() {
       setBatchName("");
       setSelectedPersona(null);
       
+      // Set the selected batch and its transactions directly from the response
+      setSelectedBatch(response.data);
+      setBatchTransactions(response.data.transactions);
+      
       // Refresh batches list
       await fetchBatches();
-      
-      // Get the newly created batch
-      const newBatch = await axios.get(`${API_BASE_URL}/batches/${response.data.batch_id}`);
-      
-      // Set the selected batch and its transactions in the history tab
-      setSelectedBatch(newBatch.data);
-      setBatchTransactions(newBatch.data.transactions);
       
       // Switch to the history tab
       setActiveTab("history");
@@ -766,6 +760,7 @@ function Main() {
                         onBatchDeleted={fetchBatches}
                         onBatchUpdated={fetchBatches}
                         token={token!}
+                        selectedBatchId={selectedBatch?.id}
                       />
                     )}
                   </CardContent>

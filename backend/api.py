@@ -1,9 +1,12 @@
 from fastapi import FastAPI, Request, HTTPException, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import numpy as np
 import logging
 import torch
@@ -23,6 +26,7 @@ from models.explanation_service import ExplanationService
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 
+# Constants and Configuration
 SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -33,7 +37,149 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+# API Models
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+class PersonaBase(BaseModel):
+    name: str
+    description: str
+
+class PersonaCreate(PersonaBase):
+    distribution: Optional[Dict[str, float]] = Field(None, description="Category distribution percentages")
+    dataset: Optional[List[Dict[str, Any]]] = Field(None, description="Custom transaction dataset")
+
+class PersonaResponse(PersonaBase):
+    id: int
+    class Config:
+        from_attributes = True
+
+class TransactionAmount(BaseModel):
+    amount: str
+    currency: str
+
+class TransactionCreate(BaseModel):
+    bookingDateTime: str
+    valueDateTime: str
+    transactionAmount: TransactionAmount
+    creditorName: str
+    creditorAccount: Dict[str, str]
+    debtorName: str
+    debtorAccount: Dict[str, str]
+    remittanceInformationUnstructured: str
+    category: str
+
+class TransactionUpdate(BaseModel):
+    transactionAmount: Optional[TransactionAmount] = None
+    category: Optional[str] = None
+    creditorName: Optional[str] = None
+    remittanceInformationUnstructured: Optional[str] = None
+    useForTraining: Optional[bool] = Field(True, description="Whether to use this update for model training")
+
+class TransactionResponse(BaseModel):
+    transactionId: str
+    bookingDateTime: str
+    valueDateTime: str
+    transactionAmount: TransactionAmount
+    creditorName: str
+    creditorAccount: Dict[str, str]
+    debtorName: str
+    debtorAccount: Dict[str, str]
+    remittanceInformationUnstructured: str
+    category: str
+    edited: bool = False
+
+class BatchCreate(BaseModel):
+    name: Optional[str] = None
+    months: int = Field(3, description="Number of months of transactions to generate")
+
+class BatchResponse(BaseModel):
+    id: int
+    name: str
+    persona_id: int
+    persona_name: str
+    created_at: str
+    transaction_count: int
+    preview: Dict[str, Any]
+    transactions: Optional[List[TransactionResponse]] = None
+    months: int
+
+class DistributionUpdate(BaseModel):
+    distribution: Dict[str, float] = Field(..., description="Category distribution percentages, must sum to 1.0")
+    useForTraining: bool = Field(True, description="Whether to use this distribution for model training")
+    batchId: Optional[int] = Field(None, description="Batch ID to regenerate with new distribution")
+
+# API Documentation
+description = """
+🏦 BetaBank API
+
+Generate and manage synthetic banking transactions with AI-powered personas.
+
+## Features
+
+* 🔐 JWT Authentication
+* 👤 Persona Management
+* 💰 Transaction Generation
+* 📊 Distribution Control
+* 📈 Model Training
+* 📁 Batch Management
+
+## Getting Started
+
+1. Register a new user account
+2. Get an access token
+3. Create or select a persona
+4. Generate transactions
+5. Manage and analyze your transaction batches
+
+"""
+
+tags_metadata = [
+    {
+        "name": "authentication",
+        "description": "User authentication and registration operations",
+    },
+    {
+        "name": "personas",
+        "description": "Manage transaction generation personas and their distributions",
+    },
+    {
+        "name": "transactions",
+        "description": "Generate and manage synthetic transactions",
+    },
+    {
+        "name": "batches",
+        "description": "Work with transaction batches - create, update, delete, and download batches",
+    },
+    {
+        "name": "explanations",
+        "description": "Get AI-generated explanations for batches and individual transactions",
+    },
+    {
+        "name": "audit",
+        "description": "Access audit logs and system activity",
+    }
+]
+
+app = FastAPI(
+    title="BetaBank API",
+    description=description,
+    version="1.0.0",
+    openapi_tags=tags_metadata,
+    contact={
+        "name": "BetaBank Support",
+        "email": "support@betabank.example.com",
+    },
+    license_info={
+        "name": "Private License",
+        "url": "https://example.com/license",
+    },
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -89,21 +235,51 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     return user
 
-@app.post("/token")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+@app.post("/token", response_model=Token, tags=["authentication"])
+async def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    """
+    Get an access token for API authentication.
+
+    - **username**: Your username
+    - **password**: Your password
+    
+    Returns a JWT token valid for 30 minutes.
+    """
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
-        raise HTTPException(status_code=401, detail="Incorrect username or password", headers={"WWW-Authenticate": "Bearer"})
-    access_token = create_access_token(data={"sub": user.username}, expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.post("/register")
-async def register_user(username: str, password: str, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.username == username).first()
+@app.post("/register", tags=["authentication"])
+async def register_user(
+    user: UserCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Register a new user account.
+
+    - **username**: Desired username
+    - **password**: Secure password
+    
+    Creates a new user account and initializes default personas.
+    """
+    existing_user = db.query(User).filter(User.username == user.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already registered")
-    hashed_password = get_password_hash(password)
-    new_user = User(username=username, password_hash=hashed_password)
+    
+    hashed_password = get_password_hash(user.password)
+    new_user = User(username=user.username, password_hash=hashed_password)
     db.add(new_user)
     db.flush()  # Flush to get the user ID
     
@@ -143,9 +319,16 @@ async def register_user(username: str, password: str, db: Session = Depends(get_
     db.commit()
     return {"message": "User registered successfully"}
 
-@app.post("/ensure-personas")
-async def ensure_personas(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Ensure all personas exist for the user with correct S3 config"""
+@app.post("/ensure-personas", tags=["personas"])
+async def ensure_personas(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Ensure all default personas exist for the user.
+    
+    Creates any missing personas and updates existing ones with correct configurations.
+    """
     existing_personas = db.query(Persona).filter(Persona.user_id == user.id).all()
     existing_names = {p.name.lower() for p in existing_personas}
     
@@ -204,21 +387,29 @@ async def ensure_personas(user: User = Depends(get_current_user), db: Session = 
     
     return {"message": "All personas exist and are up to date"}
 
-@app.get("/personas")
-async def get_personas(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@app.get("/personas", response_model=List[PersonaResponse], tags=["personas"])
+async def get_personas(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all available personas for the authenticated user.
+    
+    Returns a list of personas with their configurations and descriptions.
+    """
     personas = db.query(Persona).filter(Persona.user_id == user.id).all()
-    return {
-        "personas": [
-            {
-                "id": p.id,
-                "name": p.name,
-                "description": p.description
-            } for p in personas
-        ]
-    }
+    return personas
 
-@app.get("/batches")
-async def get_batches(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@app.get("/batches", response_model=List[BatchResponse], tags=["batches"])
+async def get_batches(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all transaction batches for the authenticated user.
+    
+    Returns a list of batches with their basic information and preview data.
+    """
     batches = (
         db.query(TransactionBatch)
         .filter(TransactionBatch.user_id == user.id)
@@ -240,11 +431,19 @@ async def get_batches(user: User = Depends(get_current_user), db: Session = Depe
             "months": batch.months
         })
 
-    return {"batches": result}
+    return result  # Return the list directly instead of wrapping it in a dictionary
 
-@app.get("/batches/{batch_id}")
-async def get_batch(batch_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Get a specific batch and its transactions"""
+@app.get("/batches/{batch_id}", response_model=BatchResponse, tags=["batches"])
+async def get_batch(
+    batch_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed information about a specific batch.
+    
+    Returns the batch with all its transactions and metadata.
+    """
     batch = (
         db.query(TransactionBatch)
         .filter(TransactionBatch.id == batch_id, TransactionBatch.user_id == user.id)
@@ -300,14 +499,18 @@ async def get_batch(batch_id: int, user: User = Depends(get_current_user), db: S
         "months": batch.months
     }
 
-@app.post("/generate/{persona_id}")
+@app.post("/generate/{persona_id}", response_model=BatchResponse, tags=["transactions"])
 async def generate_transactions(
-    persona_id: int, 
-    months: int = 3, 
-    batch_name: str = None,
-    user: User = Depends(get_current_user), 
+    persona_id: int,
+    batch_config: BatchCreate,
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Generate synthetic transactions for a specific persona.
+    
+    Creates a new batch of transactions based on the persona's configuration.
+    """
     persona = db.query(Persona).filter(Persona.id == persona_id, Persona.user_id == user.id).first()
     if not persona:
         raise HTTPException(status_code=404, detail="Persona not found")
@@ -363,7 +566,7 @@ async def generate_transactions(
             models[model_key] = model
 
         # Generate data
-        n_samples = 50 * months
+        n_samples = 50 * batch_config.months
         categories = data_processor.category_columns
         
         # Get target distribution for the persona
@@ -442,9 +645,9 @@ async def generate_transactions(
         batch = TransactionBatch(
             user_id=user.id,
             persona_id=persona_id,
-            name=batch_name if batch_name else default_name,
+            name=batch_config.name if batch_config.name else default_name,
             preview_json={"count": len(transactions)},
-            months=months  # Store the months value
+            months=batch_config.months  # Store the months value
         )
         db.add(batch)
         db.flush()
@@ -515,7 +718,7 @@ async def generate_transactions(
             entity_id=str(batch.id),
             details={
                 "persona_id": persona_id,
-                "months": months,
+                "months": batch_config.months,
                 "transaction_count": len(transactions),
                 "explanations_generated": True
             }
@@ -524,9 +727,15 @@ async def generate_transactions(
         db.commit()
         
         return {
-            "count": len(transactions),
+            "id": batch.id,
+            "name": batch.name,
+            "persona_id": batch.persona_id,
+            "persona_name": persona.name,
+            "created_at": batch.created_at.isoformat(),
+            "transaction_count": len(transactions),
+            "preview": batch.preview_json,
             "transactions": transactions,
-            "batch_id": batch.id
+            "months": batch.months
         }
         
     except Exception as e:
@@ -534,9 +743,14 @@ async def generate_transactions(
         logger.error(f"Error generating transactions: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error generating transactions: {str(e)}")
 
-@app.post("/update-personas")
-async def update_personas(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Update existing personas with correct config_json"""
+@app.post("/update-personas", tags=["personas"])
+async def update_personas(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update existing personas with correct configurations.
+    """
     updated = []
     for persona in user.personas:
         for persona_id, data in PERSONAS.items():
@@ -551,12 +765,17 @@ async def update_personas(user: User = Depends(get_current_user), db: Session = 
     
     return {"message": "No personas needed updating"}
 
-@app.delete("/batches/{batch_id}")
+@app.delete("/batches/{batch_id}", tags=["batches"])
 async def delete_batch(
     batch_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Delete a specific batch and all its transactions.
+    
+    This operation cannot be undone.
+    """
     # Find the batch and verify ownership
     batch = db.query(TransactionBatch).filter(
         TransactionBatch.id == batch_id,
@@ -594,60 +813,16 @@ async def delete_batch(
         logger.error(f"Error deleting batch: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting batch: {str(e)}")
 
-@app.delete("/transactions/{transaction_id}")
-async def delete_transaction(
-    transaction_id: str,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    # Find the transaction and verify ownership through batch
-    transaction = (
-        db.query(Transaction)
-        .join(TransactionBatch)
-        .filter(
-            Transaction.transaction_id == transaction_id,
-            TransactionBatch.user_id == user.id
-        )
-        .first()
-    )
-    
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    
-    try:
-        # Create audit log before deletion
-        audit_log = AuditLog(
-            user_id=user.id,
-            action_type=ActionType.TRANSACTION_DELETED,
-            entity_type="transaction",
-            entity_id=transaction_id,
-            details={
-                "batch_id": transaction.batch_id,
-                "amount": transaction.amount,
-                "category": transaction.category,
-                "description": transaction.remittance_information_unstructured,
-                "creditor_name": transaction.creditor_name
-            }
-        )
-        db.add(audit_log)
-        
-        # Delete the transaction
-        db.delete(transaction)
-        db.commit()
-        
-        return {"message": "Transaction deleted successfully"}
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error deleting transaction: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error deleting transaction: {str(e)}")
-
-@app.patch("/batches/{batch_id}")
+@app.patch("/batches/{batch_id}", tags=["batches"])
 async def update_batch(
     batch_id: int,
     name: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Update a batch's metadata (e.g., name).
+    """
     # Find the batch and verify ownership
     batch = db.query(TransactionBatch).filter(
         TransactionBatch.id == batch_id,
@@ -682,13 +857,21 @@ async def update_batch(
         logger.error(f"Error updating batch: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error updating batch: {str(e)}")
 
-@app.get("/batches/{batch_id}/download/{format}")
+@app.get("/batches/{batch_id}/download/{format}", tags=["batches"])
 async def download_batch(
     batch_id: int,
     format: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Download a batch in the specified format.
+    
+    Available formats:
+    - csv: Comma-separated values
+    - json: JSON array of transactions
+    - excel: Microsoft Excel spreadsheet
+    """
     if format not in ["csv", "json", "excel"]:
         raise HTTPException(status_code=400, detail="Invalid format. Must be csv, json, or excel")
     
@@ -784,197 +967,18 @@ async def download_batch(
         logger.error(f"Error downloading batch: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error downloading batch: {str(e)}")
 
-@app.patch("/personas/{persona_id}/distribution")
-async def update_persona_distribution(
-    persona_id: int,
-    distribution: dict,
-    batch_id: Optional[int] = None,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    persona = db.query(Persona).filter(
-        Persona.id == persona_id,
-        Persona.user_id == user.id
-    ).first()
-    
-    if not persona:
-        raise HTTPException(status_code=404, detail="Persona not found")
-    
-    try:
-        # Get the useForTraining flag from the request body
-        use_for_training = distribution.pop("useForTraining", True)
-        
-        # Validate distribution values
-        try:
-            # Convert each value to float explicitly and log any errors
-            validated_distribution = {}
-            for category, value in distribution.items():
-                try:
-                    float_value = float(value)
-                    validated_distribution[category] = float_value
-                except (TypeError, ValueError) as e:
-                    logger.error(f"Error converting value for {category}: {value} (type: {type(value)})")
-                    raise ValueError(f"Invalid number for category {category}: {value}")
-            
-            total = sum(validated_distribution.values())
-            if not (0.99 <= total <= 1.01):  # Allow small rounding errors
-                raise ValueError(f"Distribution percentages must sum to 100% (got {total * 100}%)")
-            
-            distribution = validated_distribution  # Use the validated distribution
-            
-        except (TypeError, ValueError) as e:
-            logger.error(f"Error in distribution validation: {str(e)}")
-            raise ValueError("Distribution values must be numbers")
-        
-        # Store original distribution for audit
-        original_distribution = persona.config_json.get("custom_distribution", {}) if persona.config_json else {}
-        
-        # Update persona config
-        config = persona.config_json or {}
-        config["custom_distribution"] = distribution
-        persona.config_json = config
-        
-        # Create audit log for distribution update
-        audit_log = AuditLog(
-            user_id=user.id,
-            action_type=ActionType.DISTRIBUTION_UPDATED,
-            entity_type="persona",
-            entity_id=str(persona_id),
-            details={
-                "new_distribution": distribution,
-                "original_distribution": original_distribution,
-                "use_for_training": use_for_training,
-                "batch_id": batch_id
-            }
-        )
-        db.add(audit_log)
-        
-        # If useForTraining is True, add to training data
-        if use_for_training:
-            training_data = TrainingData(
-                user_id=user.id,
-                data_type="distribution_update",
-                data={
-                    "persona_id": persona_id,
-                    "original_distribution": original_distribution,
-                    "new_distribution": distribution,
-                    "batch_id": batch_id
-                }
-            )
-            db.add(training_data)
-        
-        if batch_id:
-            # Regenerate batch with new distribution
-            # ... existing batch regeneration code ...
-            pass
-        
-        db.commit()
-        return {"message": "Distribution updated successfully", "batch_regenerated": batch_id is not None}
-        
-    except ValueError as e:
-        db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Error updating distribution: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error updating distribution: {str(e)}")
-
-@app.post("/personas")
-async def create_persona(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        body = await request.json()
-        name = body.get("name")
-        distribution = body.get("distribution")
-        save_for_training = body.get("save_for_training", False)
-        
-        if not name or not distribution:
-            raise HTTPException(status_code=400, detail="Name and distribution are required")
-        
-        # Validate the distribution
-        try:
-            data_processor.validate_custom_distribution(distribution)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        
-        # Create new persona
-        new_persona = Persona(
-            user_id=user.id,
-            name=name,
-            description=f"Custom persona with defined distribution",
-            config_json={
-                "custom_distribution": distribution,
-                "use_for_training": save_for_training
-            }
-        )
-        
-        db.add(new_persona)
-        db.commit()
-        
-        return {"message": "Persona created successfully", "id": new_persona.id}
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error creating persona: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error creating persona: {str(e)}")
-
-@app.post("/personas/dataset")
-async def create_persona_with_dataset(
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        body = await request.json()
-        name = body.get("name")
-        description = body.get("description", "")
-        dataset = body.get("dataset")
-        
-        if not name or not dataset:
-            raise HTTPException(status_code=400, detail="Name and dataset are required")
-        
-        # Upload dataset to S3
-        try:
-            s3_url = data_processor.upload_dataset_to_s3(dataset, user.username, name)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except Exception as e:
-            logger.error(f"Error uploading dataset: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error uploading dataset: {str(e)}")
-        
-        # Create new persona
-        new_persona = Persona(
-            user_id=user.id,
-            name=name,
-            description=description or f"Custom persona with uploaded dataset",
-            config_json={
-                "dataset_path": s3_url,
-                "use_for_training": True  # Always use uploaded datasets for training
-            }
-        )
-        
-        db.add(new_persona)
-        db.commit()
-        
-        return {"message": "Persona created successfully", "id": new_persona.id}
-        
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error creating persona: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error creating persona: {str(e)}")
-
-@app.patch("/transactions/{transaction_id}")
+@app.patch("/transactions/{transaction_id}", response_model=TransactionResponse, tags=["transactions"])
 async def update_transaction(
     transaction_id: str,
-    transaction_update: dict,
+    transaction: TransactionUpdate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Update a specific transaction's details.
+    
+    Optionally use the update for model training.
+    """
     # Find the transaction and verify ownership through batch
     transaction = (
         db.query(Transaction)
@@ -999,22 +1003,22 @@ async def update_transaction(
         }
         
         # Update allowed fields
-        if "transactionAmount" in transaction_update:
-            transaction.amount = float(transaction_update["transactionAmount"]["amount"])
+        if "transactionAmount" in transaction:
+            transaction.amount = float(transaction.transactionAmount.amount)
         
-        if "remittanceInformationUnstructured" in transaction_update:
-            transaction.remittance_information_unstructured = transaction_update["remittanceInformationUnstructured"]
+        if "remittanceInformationUnstructured" in transaction:
+            transaction.remittance_information_unstructured = transaction.remittanceInformationUnstructured
         
-        if "category" in transaction_update:
-            transaction.category = transaction_update["category"]
+        if "category" in transaction:
+            transaction.category = transaction.category
         
-        if "creditorName" in transaction_update:
-            transaction.creditor_name = transaction_update["creditorName"]
+        if "creditorName" in transaction:
+            transaction.creditor_name = transaction.creditorName
         
         transaction.edited = True
         
         # Get the useForTraining flag
-        use_for_training = transaction_update.get("useForTraining", True)
+        use_for_training = transaction.useForTraining
         
         # Create audit log for the edit
         audit_log = AuditLog(
@@ -1084,7 +1088,59 @@ async def update_transaction(
         logger.error(f"Error updating transaction: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error updating transaction: {str(e)}")
 
-@app.get("/audit-logs")
+@app.delete("/transactions/{transaction_id}", tags=["transactions"])
+async def delete_transaction(
+    transaction_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a specific transaction.
+    
+    This operation cannot be undone.
+    """
+    # Find the transaction and verify ownership through batch
+    transaction = (
+        db.query(Transaction)
+        .join(TransactionBatch)
+        .filter(
+            Transaction.transaction_id == transaction_id,
+            TransactionBatch.user_id == user.id
+        )
+        .first()
+    )
+    
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    try:
+        # Create audit log before deletion
+        audit_log = AuditLog(
+            user_id=user.id,
+            action_type=ActionType.TRANSACTION_DELETED,
+            entity_type="transaction",
+            entity_id=transaction_id,
+            details={
+                "batch_id": transaction.batch_id,
+                "amount": transaction.amount,
+                "category": transaction.category,
+                "description": transaction.remittance_information_unstructured,
+                "creditor_name": transaction.creditor_name
+            }
+        )
+        db.add(audit_log)
+        
+        # Delete the transaction
+        db.delete(transaction)
+        db.commit()
+        
+        return {"message": "Transaction deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting transaction: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting transaction: {str(e)}")
+
+@app.get("/audit-logs", tags=["audit"])
 async def get_audit_logs(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -1095,6 +1151,14 @@ async def get_audit_logs(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None
 ):
+    """
+    Get audit logs for user actions.
+    
+    Filter by:
+    - action_type: Type of action performed
+    - entity_type: Type of entity affected
+    - date range: from_date and to_date
+    """
     query = db.query(AuditLog).filter(AuditLog.user_id == user.id)
     
     if action_type:
@@ -1121,13 +1185,22 @@ async def get_audit_logs(
         } for log in logs]
     }
 
-@app.get("/batches/{batch_id}/explanation")
+@app.get("/batches/{batch_id}/explanation", tags=["explanations"])
 async def get_batch_explanation(
     batch_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get explanation for a batch of transactions."""
+    """
+    Get AI-generated explanation for a batch of transactions.
+    
+    Returns:
+    - Distribution patterns across transaction categories
+    - Temporal patterns in transaction timing
+    - Amount patterns and trends
+    - Detected anomalies
+    - Overall batch summary
+    """
     # Find the batch and verify ownership
     batch = db.query(TransactionBatch).filter(
         TransactionBatch.id == batch_id,
@@ -1152,13 +1225,22 @@ async def get_batch_explanation(
         "summary_text": explanation.summary_text
     }
 
-@app.get("/transactions/{transaction_id}/explanation")
+@app.get("/transactions/{transaction_id}/explanation", tags=["explanations"])
 async def get_transaction_explanation(
     transaction_id: str,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get explanation for a specific transaction."""
+    """
+    Get AI-generated explanation for a specific transaction.
+    
+    Returns:
+    - Feature importance scores
+    - Applied transaction patterns
+    - Natural language explanation
+    - Confidence score
+    - Additional metadata
+    """
     # Find the transaction and verify ownership through batch
     transaction = db.query(Transaction).filter(Transaction.transaction_id == transaction_id).first()
     if not transaction:
@@ -1185,47 +1267,6 @@ async def get_transaction_explanation(
         "explanation_text": explanation.explanation_text,
         "confidence_score": explanation.confidence_score,
         "meta_info": explanation.meta_info
-    }
-
-@app.get("/debug/check-admin")
-async def check_admin(db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == "admin").first()
-    if user:
-        return {
-            "found": True,
-            "id": user.id,
-            "username": user.username,
-            "password_hash": user.password_hash,
-            "created_at": user.created_at.isoformat() if user.created_at else None
-        }
-    return {"found": False}
-
-@app.post("/debug/recreate-admin")
-async def recreate_admin(db: Session = Depends(get_db)):
-    # Delete existing admin if exists
-    db.query(User).filter(User.username == "admin").delete()
-    
-    # Create new admin user with fresh hash
-    password = "admin"
-    hashed_password = pwd_context.hash(password)
-    
-    new_user = User(
-        username="admin",
-        password_hash=hashed_password
-    )
-    
-    db.add(new_user)
-    db.commit()
-    
-    # Verify the password works
-    verification = verify_password("admin", hashed_password)
-    
-    return {
-        "message": "Admin user recreated",
-        "id": new_user.id,
-        "username": new_user.username,
-        "password_hash": hashed_password,
-        "verification_test": verification
     }
 
 def transaction_to_tensor(self, tx):
