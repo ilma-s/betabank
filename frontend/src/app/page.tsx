@@ -37,6 +37,7 @@ import { Trash2, Pencil, Settings } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import Link from "next/link";
 import { BatchView } from "@/components/BatchView";
+import { BatchList } from "@/components/BatchList";
 
 interface ApiError {
   detail: string;
@@ -208,13 +209,16 @@ function Main() {
     }
   };
 
-  const viewBatchDetails = async (batch: TransactionBatch) => {
-    console.log("Fetching details for batch:", batch.id);
+  const viewBatchDetails = async (batchId: number) => {
+    console.log("Fetching details for batch:", batchId);
+    const batch = batches.find(b => b.id === batchId);
+    if (!batch) return;
+    
     setSelectedBatch(batch);
     setLoadingBatch(true);
 
     try {
-      const response = await axios.get(`${API_BASE_URL}/batches/${batch.id}`);
+      const response = await axios.get(`${API_BASE_URL}/batches/${batchId}`);
       console.log("Successfully loaded batch transactions");
       setBatchTransactions(response.data.transactions);
     } catch (error) {
@@ -390,7 +394,7 @@ function Main() {
 
     // If we were viewing a batch that was regenerated, refresh its transactions
     if (selectedBatch) {
-      await viewBatchDetails(selectedBatch);
+      await viewBatchDetails(selectedBatch.id);
     }
   };
 
@@ -749,109 +753,13 @@ function Main() {
                         No transaction batches found.
                       </p>
                     ) : (
-                      <div className="space-y-3 h-full overflow-y-auto pr-2">
-                        {batches.map((batch) => (
-                          <div
-                            key={batch.id}
-                            className={`p-3 rounded border cursor-pointer group ${
-                              selectedBatch?.id === batch.id
-                                ? "bg-[#261436] text-white"
-                                : "bg-white text-[#261436] hover:bg-gray-100"
-                            }`}
-                            onClick={() => viewBatchDetails(batch)}
-                          >
-                            <div className="flex flex-col h-full">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <h3 className="font-medium">{batch.name}</h3>
-                                  <p className="text-sm opacity-80">
-                                    {batch.persona_name}
-                                  </p>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  {isDeleting === batch.id ? (
-                                    <span className="text-sm text-gray-500">
-                                      Deleting...
-                                    </span>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={(e) =>
-                                          handleDelete(e, batch.id)
-                                        }
-                                        className="p-1.5 rounded-full hover:bg-red-100 text-red-600 hover:text-red-800"
-                                        title="Delete batch"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setEditingBatchId(batch.id);
-                                          setEditingBatchName(batch.name);
-                                        }}
-                                        className="p-1.5 rounded-full hover:bg-gray-100"
-                                        title="Edit batch name"
-                                      >
-                                        <Pencil className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          // Calculate current distribution from batch transactions
-                                          const categoryCount: Record<
-                                            string,
-                                            number
-                                          > = {};
-                                          const totalTransactions =
-                                            batchTransactions.length;
-
-                                          batchTransactions.forEach((tx) => {
-                                            categoryCount[tx.category] =
-                                              (categoryCount[tx.category] ||
-                                                0) + 1;
-                                          });
-
-                                          const currentDistribution =
-                                            Object.entries(
-                                              categoryCount
-                                            ).reduce(
-                                              (acc, [category, count]) => {
-                                                acc[category] =
-                                                  count / totalTransactions;
-                                                return acc;
-                                              },
-                                              {} as Record<string, number>
-                                            );
-
-                                          setEditingDistribution({
-                                            personaId: batch.persona_id,
-                                            personaName: batch.persona_name,
-                                            batchId: batch.id,
-                                            currentDistribution,
-                                          });
-                                        }}
-                                        className="p-1.5 rounded-full hover:bg-gray-100"
-                                        title="Edit distribution"
-                                      >
-                                        <Settings className="w-4 h-4" />
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex justify-between text-xs mt-2 opacity-80">
-                                <span>
-                                  {new Date(
-                                    batch.created_at
-                                  ).toLocaleDateString('en-GB')}
-                                </span>
-                                <span>
-                                  {batch.transaction_count} transactions
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                      <BatchList
+                        batches={batches}
+                        onBatchClick={viewBatchDetails}
+                        onBatchDeleted={fetchBatches}
+                        onBatchUpdated={fetchBatches}
+                        token={token!}
+                      />
                     )}
                   </CardContent>
                 </Card>
@@ -930,13 +838,24 @@ function Main() {
                     {selectedBatch && (
                       <CardDescription className="text-[#261436]">
                         {selectedBatch.persona_name} •{" "}
-                        {new Date(selectedBatch.created_at).toLocaleDateString('en-GB', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })} •{" "}
+                        {(() => {
+                          try {
+                            const date = new Date(selectedBatch.created_at);
+                            if (isNaN(date.getTime())) {
+                              return "Invalid Date";
+                            }
+                            return date.toLocaleDateString('en-GB', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            });
+                          } catch (error) {
+                            console.error("Error formatting date:", error);
+                            return "Invalid Date";
+                          }
+                        })()} •{" "}
                         {selectedBatch.months} months of generated data
                       </CardDescription>
                     )}
@@ -990,7 +909,7 @@ function Main() {
                   selectedBatch?.id === editingDistribution.batchId
                 ) {
                   // First refresh the batch details to get updated transactions
-                  await viewBatchDetails(selectedBatch);
+                  await viewBatchDetails(selectedBatch.id);
 
                   // Force a re-render of the analytics tab by updating the selectedBatch
                   setSelectedBatch((prevBatch) => ({
