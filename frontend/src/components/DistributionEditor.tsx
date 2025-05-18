@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, Loader2, Info } from "lucide-react";
@@ -30,10 +30,6 @@ interface DistributionEditorProps {
   currentDistribution?: Record<string, number>;
   onDistributionUpdated?: () => void;
   isNewPersona?: boolean;
-}
-
-interface ApiError {
-  detail: string;
 }
 
 export function DistributionEditor({
@@ -72,18 +68,15 @@ export function DistributionEditor({
   );
   const [newCategory, setNewCategory] = useState("");
   const [newPercentage, setNewPercentage] = useState("");
-  const [saveForTraining, setSaveForTraining] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [regenerateBatch, setRegenerateBatch] = useState(!!batchId);
   const [useForTraining, setUseForTraining] = useState(true);
 
   const total = Object.values(distribution).reduce((sum, val) => sum + val, 0);
-  const isValid = Math.abs(total - 1) < 0.01; // Allow small rounding errors
+  const isValid = Math.abs(total - 1) < 0.01;
   const totalPercentage = (total * 100).toFixed(1);
   const isExactly100 = totalPercentage === "100.0";
 
   const handlePercentageChange = (category: string, value: string) => {
-    // Validate input is a valid number
     if (value !== "" && isNaN(parseFloat(value))) {
       return;
     }
@@ -172,7 +165,7 @@ export function DistributionEditor({
       });
 
       onDistributionUpdated?.();
-    } catch (error) {
+    } catch {
       toast({
         title: "Error",
         description: "Failed to update distribution",
@@ -197,9 +190,8 @@ export function DistributionEditor({
         </div>
 
         <div className="grid gap-4">
-          {/* Existing Categories */}
           <div className="grid gap-2">
-            {Object.entries(distribution).map(([category, percentage]) => (
+            {Object.entries(distribution).map(([category]) => (
               <div key={category} className="flex items-center gap-2">
                 <span className="w-40 truncate text-[#261436]">{category}</span>
                 <Input
@@ -225,7 +217,6 @@ export function DistributionEditor({
             ))}
           </div>
 
-          {/* Add New Category */}
           <div className="flex items-center gap-2 pt-4 border-t">
             <Input
               placeholder="New Category"
@@ -254,7 +245,6 @@ export function DistributionEditor({
             </Button>
           </div>
 
-          {/* Total Percentage */}
           <div className="flex items-center gap-2 pt-4 border-t">
             <span className="font-medium text-[#261436]">Total:</span>
             <span
@@ -264,7 +254,6 @@ export function DistributionEditor({
             </span>
           </div>
 
-          {/* Add training checkbox */}
           <div className="flex items-center gap-2 pt-4">
             <input
               type="checkbox"
@@ -330,9 +319,8 @@ export function DistributionEditor({
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
-          {/* Existing Categories */}
           <div className="grid gap-2">
-            {Object.entries(distribution).map(([category, percentage]) => (
+            {Object.entries(distribution).map(([category]) => (
               <div key={category} className="flex items-center gap-2">
                 <span className="w-40 truncate text-[#261436]">{category}</span>
                 <Input
@@ -358,7 +346,6 @@ export function DistributionEditor({
             ))}
           </div>
 
-          {/* Total Percentage */}
           <div className="flex items-center gap-2 pt-4 border-t">
             <span className="font-medium text-[#261436]">Total:</span>
             <span
@@ -368,7 +355,6 @@ export function DistributionEditor({
             </span>
           </div>
 
-          {/* Add training checkbox */}
           <div className="flex items-center gap-2 pt-4">
             <input
               type="checkbox"

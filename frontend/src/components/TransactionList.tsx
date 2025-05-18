@@ -1,10 +1,10 @@
-import { Transaction } from "@/types";
+import { Transaction, TransactionExplanationData } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Pencil, Trash2, Search, FilterIcon, X, ChevronDown, ChevronUp, Info } from "lucide-react";
+import { Pencil, Trash2, FilterIcon, X, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useToast } from "@/components/ui/use-toast";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import {
   Dialog,
   DialogContent,
@@ -55,14 +55,13 @@ export function TransactionList({
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // Search filters
   const [searchMerchant, setSearchMerchant] = useState("");
   const [searchCategory, setSearchCategory] = useState("");
   const [searchDate, setSearchDate] = useState("");
   const [transactionType, setTransactionType] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
-  const [explanation, setExplanation] = useState<any>(null);
+  const [explanation, setExplanation] = useState<TransactionExplanationData | null>(null);
   const [loadingExplanation, setLoadingExplanation] = useState(false);
   const [showExplanationDialog, setShowExplanationDialog] = useState(false);
 
@@ -80,20 +79,16 @@ export function TransactionList({
     "Gambling",
   ];
 
-  // Filter transactions based on search criteria
   const filteredTransactions = useMemo(() => {
     return transactions.filter(transaction => {
-      // Merchant filter
       if (searchMerchant && !transaction.creditorName.toLowerCase().includes(searchMerchant.toLowerCase())) {
         return false;
       }
       
-      // Category filter
       if (searchCategory && searchCategory !== 'all' && transaction.category !== searchCategory) {
         return false;
       }
       
-      // Date filter
       if (searchDate) {
         const txDate = new Date(transaction.bookingDateTime).toISOString().split('T')[0];
         if (txDate !== searchDate) {
@@ -101,7 +96,6 @@ export function TransactionList({
         }
       }
 
-      // Transaction type filter (income/expense)
       if (transactionType !== 'all') {
         const amount = parseFloat(transaction.transactionAmount.amount);
         if (transactionType === 'income' && amount <= 0) {
@@ -158,10 +152,14 @@ export function TransactionList({
 
       onTransactionUpdated?.();
       setEditingTransaction(null);
-    } catch (error) {
+    } catch (err) {
+      const errorMessage = err instanceof AxiosError 
+        ? err.response?.data?.detail || "Failed to update transaction"
+        : "Failed to update transaction";
+
       toast({
         title: "Error",
-        description: "Failed to update transaction",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -189,10 +187,14 @@ export function TransactionList({
         description: "Transaction deleted successfully",
       });
       onTransactionUpdated?.();
-    } catch (error) {
+    } catch (err) {
+      const errorMessage = err instanceof AxiosError 
+        ? err.response?.data?.detail || "Failed to delete transaction"
+        : "Failed to delete transaction";
+
       toast({
         title: "Error",
-        description: "Failed to delete transaction",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -203,7 +205,7 @@ export function TransactionList({
   const fetchExplanation = async (transactionId: string) => {
     setLoadingExplanation(true);
     try {
-      const response = await axios.get(
+      const response = await axios.get<TransactionExplanationData>(
         `http://localhost:8000/transactions/${transactionId}/explanation`,
         {
           headers: {
@@ -214,10 +216,14 @@ export function TransactionList({
       setExplanation(response.data);
       setSelectedTransactionId(transactionId);
       setShowExplanationDialog(true);
-    } catch (error) {
+    } catch (err) {
+      const errorMessage = err instanceof AxiosError 
+        ? err.response?.data?.detail || "Failed to load transaction explanation"
+        : "Failed to load transaction explanation";
+
       toast({
         title: "Error",
-        description: "Failed to load transaction explanation",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {

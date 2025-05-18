@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from "react";
 import {
   LineChart,
   Line,
@@ -13,14 +13,12 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ScatterChart,
-  Scatter,
   ComposedChart,
-  Area
-} from 'recharts';
+  Area,
+} from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, ZoomIn, Filter } from "lucide-react";
+import { Download } from "lucide-react";
 import { Transaction } from "@/types";
 import {
   Select,
@@ -30,144 +28,282 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+interface DailySpending {
+  date: string;
+  amount: number;
+}
+
+interface CategoryDistribution {
+  name: string;
+  value: number;
+}
+
+interface MonthlyData {
+  total: number;
+  count: number;
+  average: number;
+  transactions: Transaction[];
+}
+
+interface MonthlyTotals {
+  month: string;
+  total: number;
+  average: number;
+  count: number;
+}
+
+interface DayOfWeekAnalysis {
+  day: string;
+  amount: number;
+}
+
+interface TimeOfDayAnalysis {
+  hour: string;
+  amount: number;
+}
+
+interface SizeDistribution {
+  range: string;
+  count: number;
+}
+
+interface CategoryGrowth {
+  month: string;
+  amount: number;
+}
+
+interface AnalyticsTrends {
+  totalVolume: number;
+  totalValue: number;
+  averageValue: number;
+  categoryGrowth: Record<string, CategoryGrowth[]>;
+}
+
+interface AnalyticsExport {
+  summary: {
+    totalTransactions: number;
+    totalValue: number;
+    averageTransactionValue: number;
+    timeRange: TimeRange;
+    exportDate: string;
+  };
+  analytics: {
+    dailySpending: DailySpending[];
+    categoryDistribution: CategoryDistribution[];
+    monthlyTotals: MonthlyTotals[];
+    dayOfWeekAnalysis: DayOfWeekAnalysis[];
+    timeOfDayAnalysis: TimeOfDayAnalysis[];
+    transactionSizeDistribution: SizeDistribution[];
+    categoryGrowthTrends: Record<string, CategoryGrowth[]>;
+  };
+  rawTransactions: Transaction[];
+}
+
+interface Analytics {
+  dailySpending: DailySpending[];
+  categoryDistribution: CategoryDistribution[];
+  monthlyTotals: MonthlyTotals[];
+  dowAnalysis: DayOfWeekAnalysis[];
+  todAnalysis: TimeOfDayAnalysis[];
+  sizeDistribution: SizeDistribution[];
+  trends: AnalyticsTrends;
+}
+
 interface TransactionAnalyticsProps {
   transactions: Transaction[];
 }
 
-export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps) {
-  const [timeRange, setTimeRange] = useState('all');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+type TimeRange = "all" | "7d" | "30d" | "90d";
 
-  // Prepare data for different visualizations
-  const analytics = useMemo(() => {
-    // Filter transactions based on time range
+export function TransactionAnalytics({
+  transactions,
+}: TransactionAnalyticsProps) {
+  const [timeRange, setTimeRange] = useState<TimeRange>("all");
+
+  const analytics = useMemo<Analytics>(() => {
     const now = new Date();
-    const filteredTransactions = transactions.filter(tx => {
+    const filteredTransactions = transactions.filter((tx: Transaction) => {
       const txDate = new Date(tx.bookingDateTime);
       switch (timeRange) {
-        case '7d':
-          return (now.getTime() - txDate.getTime()) <= 7 * 24 * 60 * 60 * 1000;
-        case '30d':
-          return (now.getTime() - txDate.getTime()) <= 30 * 24 * 60 * 60 * 1000;
-        case '90d':
-          return (now.getTime() - txDate.getTime()) <= 90 * 24 * 60 * 60 * 1000;
+        case "7d":
+          return now.getTime() - txDate.getTime() <= 7 * 24 * 60 * 60 * 1000;
+        case "30d":
+          return now.getTime() - txDate.getTime() <= 30 * 24 * 60 * 60 * 1000;
+        case "90d":
+          return now.getTime() - txDate.getTime() <= 90 * 24 * 60 * 60 * 1000;
         default:
           return true;
       }
     });
 
-    // Sort transactions by date
     const sortedTransactions = [...filteredTransactions].sort(
-      (a, b) => new Date(a.bookingDateTime).getTime() - new Date(b.bookingDateTime).getTime()
+      (a, b) =>
+        new Date(a.bookingDateTime).getTime() -
+        new Date(b.bookingDateTime).getTime()
     );
 
-    // Daily spending trend
-    const dailySpending = sortedTransactions.reduce((acc: Record<string, number>, tx) => {
-      const date = new Date(tx.bookingDateTime).toLocaleDateString();
-      acc[date] = (acc[date] || 0) + parseFloat(tx.transactionAmount.amount);
-      return acc;
-    }, {});
+    const dailySpending = sortedTransactions.reduce(
+      (acc: Record<string, number>, tx) => {
+        const date = new Date(tx.bookingDateTime).toLocaleDateString();
+        acc[date] = (acc[date] || 0) + parseFloat(tx.transactionAmount.amount);
+        return acc;
+      },
+      {}
+    );
 
-    // Category distribution
-    const categoryDistribution = sortedTransactions.reduce((acc: Record<string, number>, tx) => {
-      acc[tx.category] = (acc[tx.category] || 0) + parseFloat(tx.transactionAmount.amount);
-      return acc;
-    }, {});
+    const categoryDistribution = sortedTransactions.reduce(
+      (acc: Record<string, number>, tx) => {
+        acc[tx.category] =
+          (acc[tx.category] || 0) + parseFloat(tx.transactionAmount.amount);
+        return acc;
+      },
+      {}
+    );
 
-    // Monthly totals with trend
-    const monthlyData = sortedTransactions.reduce((acc: Record<string, any>, tx) => {
-      const month = new Date(tx.bookingDateTime).toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
-      if (!acc[month]) {
-        acc[month] = {
-          total: 0,
-          count: 0,
-          average: 0,
-          transactions: []
-        };
-      }
-      acc[month].total += parseFloat(tx.transactionAmount.amount);
-      acc[month].count += 1;
-      acc[month].transactions.push(tx);
-      acc[month].average = acc[month].total / acc[month].count;
-      return acc;
-    }, {});
+    const monthlyData = sortedTransactions.reduce<Record<string, MonthlyData>>(
+      (acc, tx) => {
+        const month = new Date(tx.bookingDateTime).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+        });
+        if (!acc[month]) {
+          acc[month] = {
+            total: 0,
+            count: 0,
+            average: 0,
+            transactions: [],
+          };
+        }
+        acc[month].total += parseFloat(tx.transactionAmount.amount);
+        acc[month].count += 1;
+        acc[month].transactions.push(tx);
+        acc[month].average = acc[month].total / acc[month].count;
+        return acc;
+      },
+      {}
+    );
 
-    // Day of week analysis
-    const dowAnalysis = sortedTransactions.reduce((acc: Record<string, number>, tx) => {
-      const dow = new Date(tx.bookingDateTime).toLocaleDateString('en-US', { weekday: 'long' });
-      acc[dow] = (acc[dow] || 0) + parseFloat(tx.transactionAmount.amount);
-      return acc;
-    }, {});
+    const dowAnalysis = sortedTransactions.reduce(
+      (acc: Record<string, number>, tx) => {
+        const dow = new Date(tx.bookingDateTime).toLocaleDateString("en-US", {
+          weekday: "long",
+        });
+        acc[dow] = (acc[dow] || 0) + parseFloat(tx.transactionAmount.amount);
+        return acc;
+      },
+      {}
+    );
 
-    // Time of day analysis
-    const todAnalysis = sortedTransactions.reduce((acc: Record<string, number>, tx) => {
-      const hour = new Date(tx.bookingDateTime).getHours();
-      const timeSlot = `${hour.toString().padStart(2, '0')}:00`;
-      acc[timeSlot] = (acc[timeSlot] || 0) + parseFloat(tx.transactionAmount.amount);
-      return acc;
-    }, {});
+    const todAnalysis = sortedTransactions.reduce(
+      (acc: Record<string, number>, tx) => {
+        const hour = new Date(tx.bookingDateTime).getHours();
+        const timeSlot = `${hour.toString().padStart(2, "0")}:00`;
+        acc[timeSlot] =
+          (acc[timeSlot] || 0) + parseFloat(tx.transactionAmount.amount);
+        return acc;
+      },
+      {}
+    );
 
-    // Transaction size distribution
-    const sizeDistribution = sortedTransactions.reduce((acc: Record<string, number>, tx) => {
-      const amount = parseFloat(tx.transactionAmount.amount);
-      let range = '0-100';
-      if (amount > 100 && amount <= 500) range = '101-500';
-      else if (amount > 500 && amount <= 1000) range = '501-1000';
-      else if (amount > 1000 && amount <= 5000) range = '1001-5000';
-      else if (amount > 5000) range = '5000+';
-      acc[range] = (acc[range] || 0) + 1;
-      return acc;
-    }, {});
+    const sizeDistribution = sortedTransactions.reduce(
+      (acc: Record<string, number>, tx) => {
+        const amount = parseFloat(tx.transactionAmount.amount);
+        let range = "0-100";
+        if (amount > 100 && amount <= 500) range = "101-500";
+        else if (amount > 500 && amount <= 1000) range = "501-1000";
+        else if (amount > 1000 && amount <= 5000) range = "1001-5000";
+        else if (amount > 5000) range = "5000+";
+        acc[range] = (acc[range] || 0) + 1;
+        return acc;
+      },
+      {}
+    );
 
-    // Calculate trends and patterns
-    const trends = {
+    const trends: AnalyticsTrends = {
       totalVolume: sortedTransactions.length,
-      totalValue: sortedTransactions.reduce((sum, tx) => sum + parseFloat(tx.transactionAmount.amount), 0),
-      averageValue: sortedTransactions.length > 0 
-        ? sortedTransactions.reduce((sum, tx) => sum + parseFloat(tx.transactionAmount.amount), 0) / sortedTransactions.length 
-        : 0,
-      categoryGrowth: Object.entries(monthlyData).reduce((acc: Record<string, any>, [month, data]: [string, any]) => {
-        Object.entries(data.transactions.reduce((catAcc: Record<string, number>, tx: Transaction) => {
-          catAcc[tx.category] = (catAcc[tx.category] || 0) + parseFloat(tx.transactionAmount.amount);
-          return catAcc;
-        }, {})).forEach(([category, amount]) => {
+      totalValue: sortedTransactions.reduce(
+        (sum, tx) => sum + parseFloat(tx.transactionAmount.amount),
+        0
+      ),
+      averageValue:
+        sortedTransactions.length > 0
+          ? sortedTransactions.reduce(
+              (sum, tx) => sum + parseFloat(tx.transactionAmount.amount),
+              0
+            ) / sortedTransactions.length
+          : 0,
+      categoryGrowth: Object.entries(monthlyData).reduce<
+        Record<string, CategoryGrowth[]>
+      >((acc, [month, data]) => {
+        Object.entries(
+          data.transactions.reduce<Record<string, number>>((catAcc, tx) => {
+            catAcc[tx.category] =
+              (catAcc[tx.category] || 0) +
+              parseFloat(tx.transactionAmount.amount);
+            return catAcc;
+          }, {})
+        ).forEach(([category, amount]) => {
           if (!acc[category]) acc[category] = [];
           acc[category].push({ month, amount });
         });
         return acc;
-      }, {})
+      }, {}),
     };
 
     return {
-      dailySpending: Object.entries(dailySpending).map(([date, amount]) => ({ date, amount })),
-      categoryDistribution: Object.entries(categoryDistribution).map(([name, value]) => ({ name, value })),
-      monthlyTotals: Object.entries(monthlyData).map(([month, data]: [string, any]) => ({ 
-        month, 
-        total: data.total,
-        average: data.average,
-        count: data.count
+      dailySpending: Object.entries(dailySpending).map(([date, amount]) => ({
+        date,
+        amount,
       })),
-      dowAnalysis: Object.entries(dowAnalysis).map(([day, amount]) => ({ day, amount })),
-      todAnalysis: Object.entries(todAnalysis).map(([hour, amount]) => ({ hour, amount })),
-      sizeDistribution: Object.entries(sizeDistribution).map(([range, count]) => ({ range, count })),
-      trends
+      categoryDistribution: Object.entries(categoryDistribution).map(
+        ([name, value]) => ({ name, value })
+      ),
+      monthlyTotals: Object.entries(monthlyData).map(
+        ([month, data]: [string, MonthlyData]) => ({
+          month,
+          total: data.total,
+          average: data.average,
+          count: data.count,
+        })
+      ),
+      dowAnalysis: Object.entries(dowAnalysis).map(([day, amount]) => ({
+        day,
+        amount,
+      })),
+      todAnalysis: Object.entries(todAnalysis).map(([hour, amount]) => ({
+        hour,
+        amount,
+      })),
+      sizeDistribution: Object.entries(sizeDistribution).map(
+        ([range, count]) => ({ range, count })
+      ),
+      trends,
     };
-  }, [transactions, timeRange, categoryFilter]);
+  }, [transactions, timeRange]);
 
-  // Colors for charts
   const COLORS = [
-    '#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d',
-    '#a4de6c', '#d0ed57', '#ffc658', '#ff7300', '#8dd1e1', '#a4de6c'
+    "#0088FE",
+    "#00C49F",
+    "#FFBB28",
+    "#FF8042",
+    "#8884d8",
+    "#82ca9d",
+    "#a4de6c",
+    "#d0ed57",
+    "#ffc658",
+    "#ff7300",
+    "#8dd1e1",
+    "#a4de6c",
   ];
 
   const exportAnalytics = () => {
-    const data = {
+    const data: AnalyticsExport = {
       summary: {
         totalTransactions: analytics.trends.totalVolume,
         totalValue: analytics.trends.totalValue,
         averageTransactionValue: analytics.trends.averageValue,
         timeRange,
-        exportDate: new Date().toISOString()
+        exportDate: new Date().toISOString(),
       },
       analytics: {
         dailySpending: analytics.dailySpending,
@@ -176,14 +312,16 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
         dayOfWeekAnalysis: analytics.dowAnalysis,
         timeOfDayAnalysis: analytics.todAnalysis,
         transactionSizeDistribution: analytics.sizeDistribution,
-        categoryGrowthTrends: analytics.trends.categoryGrowth
+        categoryGrowthTrends: analytics.trends.categoryGrowth,
       },
-      rawTransactions: transactions
+      rawTransactions: transactions,
     };
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = `transaction-analytics-${new Date().toISOString()}.json`;
     document.body.appendChild(a);
@@ -195,9 +333,14 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-[#261436]">Transaction Analytics</h2>
+        <h2 className="text-2xl font-bold text-[#261436]">
+          Transaction Analytics
+        </h2>
         <div className="flex gap-4">
-          <Select value={timeRange} onValueChange={setTimeRange}>
+          <Select
+            value={timeRange}
+            onValueChange={(value: TimeRange) => setTimeRange(value)}
+          >
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Time Range" />
             </SelectTrigger>
@@ -215,44 +358,7 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
         </div>
       </div>
 
-      {/* Summary Cards
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-[#261436]">Total Transactions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{analytics.trends.totalVolume}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-[#261436]">Total Value</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">${analytics.trends.totalValue.toFixed(2)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-[#261436]">Average Transaction</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">${analytics.trends.averageValue.toFixed(2)}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm text-[#261436]">Active Categories</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">{analytics.categoryDistribution.length}</p>
-          </CardContent>
-        </Card>
-      </div> */}
-
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Spending Trend */}
         <Card>
           <CardHeader>
             <CardTitle className="text-[#261436]">Spending Trend</CardTitle>
@@ -267,17 +373,23 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
                   <Tooltip />
                   <Legend />
                   <Line type="monotone" dataKey="amount" stroke="#8884d8" />
-                  <Area type="monotone" dataKey="amount" fill="#8884d8" fillOpacity={0.3} />
+                  <Area
+                    type="monotone"
+                    dataKey="amount"
+                    fill="#8884d8"
+                    fillOpacity={0.3}
+                  />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>
 
-        {/* Category Distribution */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-[#261436]">Category Distribution</CardTitle>
+            <CardTitle className="text-[#261436]">
+              Category Distribution
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -293,7 +405,10 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
                     label
                   >
                     {analytics.categoryDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={COLORS[index % COLORS.length]}
+                      />
                     ))}
                   </Pie>
                   <Tooltip />
@@ -304,10 +419,11 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
           </CardContent>
         </Card>
 
-        {/* Day of Week Analysis */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-[#261436]">Day of Week Patterns</CardTitle>
+            <CardTitle className="text-[#261436]">
+              Day of Week Patterns
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -325,10 +441,11 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
           </CardContent>
         </Card>
 
-        {/* Time of Day Analysis */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-[#261436]">Time of Day Patterns</CardTitle>
+            <CardTitle className="text-[#261436]">
+              Time of Day Patterns
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -346,10 +463,11 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
           </CardContent>
         </Card>
 
-        {/* Transaction Size Distribution */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-[#261436]">Transaction Size Distribution</CardTitle>
+            <CardTitle className="text-[#261436]">
+              Transaction Size Distribution
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -367,10 +485,11 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
           </CardContent>
         </Card>
 
-        {/* Monthly Trend Analysis */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-[#261436]">Monthly Trend Analysis</CardTitle>
+            <CardTitle className="text-[#261436]">
+              Monthly Trend Analysis
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -383,7 +502,12 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
                   <Tooltip />
                   <Legend />
                   <Bar yAxisId="left" dataKey="total" fill="#8884d8" />
-                  <Line yAxisId="right" type="monotone" dataKey="average" stroke="#82ca9d" />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="average"
+                    stroke="#82ca9d"
+                  />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -392,4 +516,4 @@ export function TransactionAnalytics({ transactions }: TransactionAnalyticsProps
       </div>
     </div>
   );
-} 
+}

@@ -27,7 +27,7 @@ export interface TransactionExplanationData {
   applied_patterns: {
     [key: string]: {
       type: string;
-      value: any;
+      value: string | number | boolean;
     };
   };
   explanation_text: string;
@@ -35,7 +35,18 @@ export interface TransactionExplanationData {
   meta_info?: {
     generated_at: string;
     version: string;
-    [key: string]: any;
+    [key: string]: string | number | boolean;
+  };
+}
+
+export interface TemporalPattern {
+  type: 'daily' | 'weekly' | 'monthly';
+  frequency: number;
+  confidence: number;
+  details?: {
+    days?: string[];
+    times?: string[];
+    dates?: number[];
   };
 }
 
@@ -69,7 +80,7 @@ export interface BatchExplanationData {
       }>;
       temporal: Array<{
         category: string;
-        patterns: any;
+        patterns: TemporalPattern[];
       }>;
     };
     transaction_count: number;
@@ -123,6 +134,18 @@ export interface Persona {
   };
 }
 
+export interface BatchPreview {
+  count: number;
+  distribution?: Record<string, number>;
+  amount_stats?: {
+    min: number;
+    max: number;
+    avg: number;
+    total: number;
+  };
+  categories?: string[];
+}
+
 export interface TransactionBatch {
   id: number;
   name: string;
@@ -130,7 +153,7 @@ export interface TransactionBatch {
   persona_name: string;
   created_at: string;
   transaction_count: number;
-  preview: any;
+  preview: BatchPreview;
   months: number;
   distribution?: Record<string, number>;
 } 

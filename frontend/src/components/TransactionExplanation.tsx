@@ -1,25 +1,30 @@
-import React from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
-import { Progress } from './ui/progress';
-import { TransactionExplanationData } from '@/types';
+import React from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Badge } from "./ui/badge";
+import { Progress } from "./ui/progress";
+import { TransactionExplanationData } from "@/types";
 
-interface TransactionExplanationProps extends Omit<TransactionExplanationData, 'transaction_id'> {
+interface TransactionExplanationProps
+  extends Omit<TransactionExplanationData, "transaction_id"> {
   transactionId: string;
 }
 
 export function TransactionExplanation({
-  transactionId,
   feature_importance: featureImportance,
   applied_patterns: appliedPatterns,
   explanation_text: explanationText,
   confidence_score: confidenceScore,
-  meta_info
+  meta_info,
 }: TransactionExplanationProps) {
-  // Sort features by importance
   const sortedFeatures = Object.entries(featureImportance)
     .sort(([, a], [, b]) => b - a)
-    .slice(0, 5); // Show top 5 features
+    .slice(0, 5);
 
   return (
     <Card className="w-full">
@@ -31,10 +36,8 @@ export function TransactionExplanation({
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {/* Main explanation */}
           <div className="text-lg font-medium">{explanationText}</div>
 
-          {/* Confidence score */}
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
               <span>Confidence Score</span>
@@ -43,12 +46,14 @@ export function TransactionExplanation({
             <Progress value={confidenceScore * 100} />
           </div>
 
-          {/* Feature importance */}
           <div className="space-y-2">
             <h4 className="font-medium">Key Influencing Factors</h4>
             <div className="grid gap-2">
               {sortedFeatures.map(([feature, importance]) => (
-                <div key={feature} className="flex justify-between items-center">
+                <div
+                  key={feature}
+                  className="flex justify-between items-center"
+                >
                   <span className="text-sm">{feature}</span>
                   <Progress value={importance * 100} className="w-32" />
                   <span className="text-sm w-16 text-right">
@@ -59,7 +64,6 @@ export function TransactionExplanation({
             </div>
           </div>
 
-          {/* Applied patterns */}
           {Object.entries(appliedPatterns).length > 0 && (
             <div className="space-y-2">
               <h4 className="font-medium">Detected Patterns</h4>
@@ -73,7 +77,6 @@ export function TransactionExplanation({
             </div>
           )}
 
-          {/* Metadata */}
           {meta_info && (
             <div className="text-sm text-muted-foreground">
               Generated at: {new Date(meta_info.generated_at).toLocaleString()}
@@ -83,4 +86,4 @@ export function TransactionExplanation({
       </CardContent>
     </Card>
   );
-} 
+}

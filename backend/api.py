@@ -114,6 +114,9 @@ class DistributionUpdate(BaseModel):
     useForTraining: bool = Field(True, description="Whether to use this distribution for model training")
     batchId: Optional[int] = Field(None, description="Batch ID to regenerate with new distribution")
 
+class BatchUpdate(BaseModel):
+    name: str
+
 # API Documentation
 description = """
 🏦 BetaBank API
@@ -816,7 +819,7 @@ async def delete_batch(
 @app.patch("/batches/{batch_id}", tags=["batches"])
 async def update_batch(
     batch_id: int,
-    name: str,
+    batch_update: BatchUpdate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -835,7 +838,7 @@ async def update_batch(
     try:
         old_name = batch.name
         # Update the batch name
-        batch.name = name
+        batch.name = batch_update.name
         
         # Create audit log for the name change
         audit_log = AuditLog(
@@ -845,13 +848,13 @@ async def update_batch(
             entity_id=str(batch_id),
             details={
                 "old_name": old_name,
-                "new_name": name
+                "new_name": batch_update.name
             }
         )
         db.add(audit_log)
         db.commit()
         
-        return {"message": "Batch updated successfully", "name": name}
+        return {"message": "Batch updated successfully", "name": batch_update.name}
     except Exception as e:
         db.rollback()
         logger.error(f"Error updating batch: {str(e)}")

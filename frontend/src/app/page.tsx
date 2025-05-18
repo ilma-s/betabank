@@ -16,7 +16,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,7 +31,7 @@ import { Parser } from "json2csv";
 import * as XLSX from "xlsx";
 import { Transaction, Persona, TransactionBatch } from "@/types";
 import { DistributionEditor } from "@/components/DistributionEditor";
-import { Pencil, Settings } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import Link from "next/link";
 import { BatchView } from "@/components/BatchView";
@@ -46,13 +45,11 @@ function Main() {
   const { logout, token } = useAuth();
   const { toast } = useToast();
 
-  // State for generator tab
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [selectedPersona, setSelectedPersona] = useState<number | null>(null);
   const [batchName, setBatchName] = useState<string>("");
-  const [selectedMonths, setSelectedMonths] = useState<string>("3"); // Default to 3 months
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [currentBatchId, setCurrentBatchId] = useState<number | null>(null);
+  const [selectedMonths, setSelectedMonths] = useState<string>("3");
+  const [transactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,41 +62,33 @@ function Main() {
     isNewPersona?: boolean;
   } | null>(null);
 
-  // State for history tab
   const [batches, setBatches] = useState<TransactionBatch[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<TransactionBatch | null>(
     null
   );
   const [batchTransactions, setBatchTransactions] = useState<Transaction[]>([]);
   const [loadingBatch, setLoadingBatch] = useState(false);
-  const [isDeleting, setIsDeleting] = useState<number | null>(null);
   const [editingBatchId, setEditingBatchId] = useState<number | null>(null);
   const [editingBatchName, setEditingBatchName] = useState<string>("");
 
-  // New persona creation state
-  const [newPersonaName, setNewPersonaName] = useState("");
-  const [newPersonaDescription, setNewPersonaDescription] = useState("");
-  const [datasetFile, setDatasetFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-
-  // API base URL
   const API_BASE_URL = "http://localhost:8000";
 
-  // Initial data load
   useEffect(() => {
     if (token) {
       const loadInitialData = async () => {
-        console.log("Starting initial data load with token:", token?.substring(0, 10) + "...");
+        console.log(
+          "Starting initial data load with token:",
+          token?.substring(0, 10) + "..."
+        );
         setInitializing(true);
         try {
-          // Set up axios defaults
           axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
-          // First verify token is valid by making a simple API call
           try {
             await axios.get(`${API_BASE_URL}/personas`);
-          } catch (error: any) {
-            if (error.response?.status === 401) {
+          } catch (error) {
+            const axiosError = error as AxiosError<ApiError>;
+            if (axiosError.response?.status === 401) {
               console.log("Token invalid, logging out user");
               logout();
               setError("Your session has expired. Please log in again.");
@@ -108,10 +97,8 @@ function Main() {
             throw error;
           }
 
-          // Now that we know the token is valid, ensure personas and load data
           await axios.post(`${API_BASE_URL}/ensure-personas`);
 
-          // Load data in parallel
           console.log("Making parallel API calls for initial data");
           const [personasResponse, batchesResponse] = await Promise.all([
             axios.get(`${API_BASE_URL}/personas`),
@@ -122,9 +109,10 @@ function Main() {
           setPersonas(personasResponse.data);
           setBatches(batchesResponse.data);
           setError(null);
-        } catch (error: any) {
+        } catch (error) {
           console.error("Failed to load initial data:", error);
-          if (error.response?.status === 401) {
+          const axiosError = error as AxiosError<ApiError>;
+          if (axiosError.response?.status === 401) {
             console.log("Got 401 during initial load, user needs to re-login");
             logout();
             setError("Your session has expired. Please log in again.");
@@ -140,15 +128,15 @@ function Main() {
     }
   }, [token, logout]);
 
-  // The rest of the fetchPersonas and fetchBatches functions will be used for refreshing data
   const fetchPersonas = async () => {
     try {
       console.log("Refreshing personas data");
       const response = await axios.get(`${API_BASE_URL}/personas`);
       setPersonas(response.data);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to fetch personas:", error);
-      if (error.response && error.response.status !== 401) {
+      const axiosError = error as AxiosError<ApiError>;
+      if (axiosError.response && axiosError.response.status !== 401) {
         setError("Failed to load personas. Please try again later.");
       }
     }
@@ -159,9 +147,10 @@ function Main() {
       console.log("Refreshing batches data");
       const response = await axios.get(`${API_BASE_URL}/batches`);
       setBatches(response.data);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to fetch batches:", error);
-      if (error.response && error.response.status !== 401) {
+      const axiosError = error as AxiosError<ApiError>;
+      if (axiosError.response && axiosError.response.status !== 401) {
         setError("Failed to load transaction batches. Please try again later.");
       }
     }
@@ -181,28 +170,25 @@ function Main() {
         }
       );
       console.log("Successfully generated transactions");
-      
-      // Clear the form
+
       setBatchName("");
       setSelectedPersona(null);
-      
-      // Set the selected batch and its transactions directly from the response
+
       setSelectedBatch(response.data);
       setBatchTransactions(response.data.transactions);
-      
-      // Refresh batches list
+
       await fetchBatches();
-      
-      // Switch to the history tab
+
       setActiveTab("history");
 
       toast({
         title: "Success",
         description: "Transactions generated successfully",
       });
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to generate transactions:", error);
-      if (error.response && error.response.status !== 401) {
+      const axiosError = error as AxiosError<ApiError>;
+      if (axiosError.response && axiosError.response.status !== 401) {
         setError("Failed to generate transactions. Please try again later.");
       }
     } finally {
@@ -212,9 +198,9 @@ function Main() {
 
   const viewBatchDetails = async (batchId: number) => {
     console.log("Fetching details for batch:", batchId);
-    const batch = batches.find(b => b.id === batchId);
+    const batch = batches.find((b) => b.id === batchId);
     if (!batch) return;
-    
+
     setSelectedBatch(batch);
     setLoadingBatch(true);
 
@@ -224,9 +210,15 @@ function Main() {
       setBatchTransactions(response.data.transactions);
     } catch (error) {
       console.error("Failed to load batch details:", error);
+      const axiosError = error as AxiosError<ApiError>;
+      const errorMessage =
+        axiosError.response?.data?.detail ||
+        (error instanceof Error
+          ? error.message
+          : "Failed to load batch details");
       toast({
         title: "Error",
-        description: "Failed to load batch details. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -295,51 +287,7 @@ function Main() {
     }
   };
 
-  const handleDelete = async (e: React.MouseEvent, batchId: number) => {
-    e.stopPropagation(); // Prevent batch click when clicking delete
-
-    if (isDeleting) return; // Prevent multiple deletes
-
-    if (!confirm("Are you sure you want to delete this batch?")) {
-      return;
-    }
-
-    setIsDeleting(batchId);
-
-    try {
-      const response = await axios.delete(`${API_BASE_URL}/batches/${batchId}`);
-
-      if (response.status !== 200) {
-        throw new Error("Failed to delete batch");
-      }
-
-      toast({
-        title: "Success",
-        description: "Batch deleted successfully",
-      });
-
-      // Refresh batches list
-      fetchBatches();
-
-      // Clear selected batch if it was deleted
-      if (selectedBatch?.id === batchId) {
-        setSelectedBatch(null);
-        setBatchTransactions([]);
-      }
-    } catch (error) {
-      console.error("Failed to delete batch:", error);
-      toast({
-        title: "Error",
-        description: "Failed to delete batch",
-        variant: "destructive",
-      });
-    } finally {
-      setIsDeleting(null);
-    }
-  };
-
   const handleBatchNameUpdate = async (batchId: number, newName: string) => {
-    // Don't update if name is empty or only whitespace
     if (!newName.trim()) {
       setEditingBatchId(null);
       setEditingBatchName("");
@@ -348,13 +296,14 @@ function Main() {
 
     try {
       const response = await axios.patch(
-        `${API_BASE_URL}/batches/${batchId}?name=${encodeURIComponent(
-          newName.trim()
-        )}`,
-        {}, // Empty body since we're using query params
+        `${API_BASE_URL}/batches/${batchId}`,
+        {
+          name: newName.trim()
+        },
         {
           headers: {
             Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json"
           },
         }
       );
@@ -365,10 +314,8 @@ function Main() {
           description: "Batch name updated successfully",
         });
 
-        // Update both the batches list and the selected batch
         fetchBatches();
 
-        // Update the selected batch if it's the one being renamed
         if (selectedBatch && selectedBatch.id === batchId) {
           setSelectedBatch({
             ...selectedBatch,
@@ -390,91 +337,28 @@ function Main() {
   };
 
   const handleDistributionUpdate = async () => {
-    // Refresh both personas and batches after distribution update
-    await Promise.all([fetchPersonas(), fetchBatches()]);
-
-    // If we were viewing a batch that was regenerated, refresh its transactions
     if (selectedBatch) {
       await viewBatchDetails(selectedBatch.id);
     }
   };
 
-  const handleDatasetFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setDatasetFile(e.target.files[0]);
-    }
-  };
-
-  const handleDatasetUpload = async () => {
-    if (!datasetFile || !newPersonaName) return;
-
-    setIsUploading(true);
-    try {
-      // Read the file content
-      const fileContent = await datasetFile.text();
-      const dataset = JSON.parse(fileContent);
-
-      // Upload the dataset
-      const response = await axios.post(
-        `${API_BASE_URL}/personas/dataset`,
-        {
-          name: newPersonaName,
-          description: newPersonaDescription,
-          dataset: dataset,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (response.status === 200) {
-        toast({
-          title: "Success",
-          description: "Custom persona created successfully",
-        });
-
-        // Reset form
-        setNewPersonaName("");
-        setNewPersonaDescription("");
-        setDatasetFile(null);
-
-        // Refresh personas list
-        await fetchPersonas();
-      }
-    } catch (error) {
-      console.error("Error uploading dataset:", error);
-      const axiosError = error as AxiosError<ApiError>;
-      const errorMessage =
-        axiosError.response?.data?.detail ||
-        (error instanceof Error ? error.message : "Failed to upload dataset");
-
-      toast({
-        title: "Error",
-        description: errorMessage,
-        variant: "destructive",
-      });
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
   const refreshBatchAndList = async () => {
-    // Refresh the batch list
     await fetchBatches();
-    
-    // Refresh the selected batch details if one is selected
+
     if (selectedBatch) {
-      const response = await axios.get(`${API_BASE_URL}/batches/${selectedBatch.id}`);
+      const response = await axios.get(
+        `${API_BASE_URL}/batches/${selectedBatch.id}`
+      );
       setBatchTransactions(response.data.transactions);
-      
-      // Update the selected batch with new transaction count
-      setSelectedBatch(prev => prev ? {
-        ...prev,
-        transaction_count: response.data.transactions.length
-      } : null);
+
+      setSelectedBatch((prev) =>
+        prev
+          ? {
+              ...prev,
+              transaction_count: response.data.transactions.length,
+            }
+          : null
+      );
     }
   };
 
@@ -500,7 +384,6 @@ function Main() {
             <Button
               onClick={() => {
                 setError(null);
-                // If we were initializing, try to reload data
                 if (initializing && token) {
                   fetchPersonas();
                   fetchBatches();
@@ -525,7 +408,11 @@ function Main() {
             </Button>
           </div>
 
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="w-full"
+          >
             <TabsList className="mb-4 bg-[#F1E6EA] p-2 rounded-lg flex gap-2">
               <TabsTrigger
                 value="generator"
@@ -541,10 +428,8 @@ function Main() {
               </TabsTrigger>
             </TabsList>
 
-            {/* Generator Tab */}
             <TabsContent value="generator">
               <div className="space-y-6">
-                {/* Transaction Generator Card */}
                 <Card className="bg-[#F1E6EA]">
                   <CardHeader>
                     <CardTitle className="text-[#261436]">
@@ -582,13 +467,14 @@ function Main() {
                         <div className="flex items-center gap-2">
                           <Select
                             value={selectedPersona?.toString() || ""}
-                            onValueChange={(value) => setSelectedPersona(parseInt(value))}
+                            onValueChange={(value) =>
+                              setSelectedPersona(parseInt(value))
+                            }
                           >
                             <SelectTrigger className="w-full bg-white text-[#261436] border border-gray-300 p-2 rounded">
                               {selectedPersona
-                                ? personas.find(
-                                    (p) => p.id === selectedPersona
-                                  )?.name || "Select a persona"
+                                ? personas.find((p) => p.id === selectedPersona)
+                                    ?.name || "Select a persona"
                                 : "Select a persona"}
                             </SelectTrigger>
                             <SelectContent className="bg-white text-[#261436] border border-gray-300 mt-1 rounded shadow-lg w-full">
@@ -716,7 +602,7 @@ function Main() {
                                   <TableCell>
                                     {new Date(
                                       tx.bookingDateTime
-                                    ).toLocaleDateString('en-GB')}
+                                    ).toLocaleDateString("en-GB")}
                                   </TableCell>
                                   <TableCell>
                                     {tx.transactionAmount.amount}{" "}
@@ -738,10 +624,8 @@ function Main() {
               </div>
             </TabsContent>
 
-            {/* History Tab */}
             <TabsContent value="history">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[calc(100vh-12rem)]">
-                {/* Batches List */}
                 <Card className="bg-[#F1E6EA] col-span-1 h-full overflow-hidden">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-[#261436]">
@@ -758,7 +642,6 @@ function Main() {
                         batches={batches}
                         onBatchClick={viewBatchDetails}
                         onBatchDeleted={fetchBatches}
-                        onBatchUpdated={fetchBatches}
                         token={token!}
                         selectedBatchId={selectedBatch?.id}
                       />
@@ -766,7 +649,6 @@ function Main() {
                   </CardContent>
                 </Card>
 
-                {/* Batch Details */}
                 <Card className="bg-[#F1E6EA] col-span-1 md:col-span-2 h-full overflow-hidden">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-[#261436] flex items-center">
@@ -846,19 +728,19 @@ function Main() {
                             if (isNaN(date.getTime())) {
                               return "Invalid Date";
                             }
-                            return date.toLocaleDateString('en-GB', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
+                            return date.toLocaleDateString("en-GB", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
                             });
                           } catch (error) {
                             console.error("Error formatting date:", error);
                             return "Invalid Date";
                           }
-                        })()} •{" "}
-                        {selectedBatch.months} months of generated data
+                        })()}{" "}
+                        • {selectedBatch.months} months of generated data
                       </CardDescription>
                     )}
                   </CardHeader>
@@ -910,16 +792,13 @@ function Main() {
                   editingDistribution.batchId &&
                   selectedBatch?.id === editingDistribution.batchId
                 ) {
-                  // First refresh the batch details to get updated transactions
                   await viewBatchDetails(selectedBatch.id);
 
-                  // Force a re-render of the analytics tab by updating the selectedBatch
                   setSelectedBatch((prevBatch) => ({
                     ...prevBatch!,
                     updated_at: new Date().toISOString(),
                   }));
                 }
-                // Then refresh the batches list
                 await fetchBatches();
                 setEditingDistribution(null);
               }}

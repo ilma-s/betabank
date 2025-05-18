@@ -37,7 +37,6 @@ export default function CreatePersonaPage() {
   const [newPercentage, setNewPercentage] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
-  // Redirect if not authenticated
   if (!isAuthenticated) {
     router.push('/');
     return null;
@@ -70,9 +69,8 @@ export default function CreatePersonaPage() {
 
     setIsCreating(true);
     try {
-      // Convert categories array to distribution object
       const distribution = categories.reduce((acc, cat) => {
-        acc[cat.name] = cat.percentage / 100; // Convert percentage to decimal
+        acc[cat.name] = cat.percentage / 100;
         return acc;
       }, {} as Record<string, number>);
 

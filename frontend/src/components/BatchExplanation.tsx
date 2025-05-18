@@ -20,10 +20,10 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import axios from "axios";
+import { TemporalPattern } from "@/types";
 
 interface BatchExplanationData {
   batch_id: number;
@@ -58,7 +58,7 @@ interface BatchExplanationData {
       }>;
       temporal: Array<{
         category: string;
-        patterns: any;
+        patterns: TemporalPattern[];
       }>;
     };
     transaction_count: number;
@@ -119,7 +119,6 @@ export function BatchExplanation(props: Props) {
   const [userAnnotations, setUserAnnotations] = useState<
     Record<string, PatternAnnotation>
   >({});
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleAnnotationSubmit = async () => {
     if (!selectedPattern) return;
@@ -150,9 +149,11 @@ export function BatchExplanation(props: Props) {
       }));
       setShowAnnotationDialog(false);
       setAnnotationText("");
-    } catch (error: any) {
-      console.error("Error submitting annotation:", error);
-      // Show error toast
+    } catch (error) {
+      console.error(
+        "Error submitting annotation:",
+        error instanceof Error ? error.message : "Unknown error"
+      );
     }
   };
 
@@ -172,7 +173,6 @@ export function BatchExplanation(props: Props) {
     );
   }
 
-  // Prepare data for category distribution chart
   const categoryData = Object.entries(
     data.distribution_explanation?.category_distribution?.distribution || {}
   )
@@ -184,7 +184,6 @@ export function BatchExplanation(props: Props) {
     }))
     .sort((a, b) => b.percentage - a.percentage);
 
-  // Prepare data for temporal patterns
   const timeClusterData = (data.temporal_patterns?.time_clusters || [])
     .map((cluster) => ({
       hour: cluster.hour,

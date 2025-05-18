@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Transaction, BatchExplanationData } from "@/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BatchAnalytics } from "./BatchAnalytics";
 import { TransactionList } from "./TransactionList";
 import { Button } from "@/components/ui/button";
-import { Download, Settings, Info } from "lucide-react";
+import { Download, Settings } from "lucide-react";
 import { DistributionEditor } from "./DistributionEditor";
 import axios from "axios";
 import { useToast } from "@/components/ui/use-toast";
@@ -39,7 +39,7 @@ export function BatchView({
     useState<BatchExplanationData | null>(null);
   const [loadingExplanation, setLoadingExplanation] = useState(false);
 
-  const fetchBatchExplanation = async () => {
+  const fetchBatchExplanation = useCallback(async () => {
     setLoadingExplanation(true);
     try {
       const response = await axios.get(
@@ -51,7 +51,7 @@ export function BatchView({
         }
       );
       setBatchExplanation(response.data);
-    } catch (error) {
+    } catch {
       toast({
         title: "Error",
         description: "Failed to load batch explanation",
@@ -60,23 +60,20 @@ export function BatchView({
     } finally {
       setLoadingExplanation(false);
     }
-  };
+  }, [batchId, token, toast]);
 
   useEffect(() => {
     fetchBatchExplanation();
-  }, [batchId]);
+  }, [batchId, fetchBatchExplanation]);
 
-  // Calculate current distribution from transactions
   const currentDistribution = useMemo(() => {
     const categoryCount: Record<string, number> = {};
     const totalTransactions = transactions.length;
 
-    // Count transactions per category
     transactions.forEach((tx) => {
       categoryCount[tx.category] = (categoryCount[tx.category] || 0) + 1;
     });
 
-    // Convert counts to percentages
     return Object.entries(categoryCount).reduce((acc, [category, count]) => {
       acc[category] = count / totalTransactions;
       return acc;
@@ -172,8 +169,10 @@ export function BatchView({
             <BatchExplanation {...batchExplanation} token={token} />
           ) : (
             <div className="text-center py-8">
-              <p className="text-muted-foreground mb-4">No analysis data available</p>
-              <Button 
+              <p className="text-muted-foreground mb-4">
+                No analysis data available
+              </p>
+              <Button
                 onClick={async () => {
                   setLoadingExplanation(true);
                   try {
@@ -196,10 +195,11 @@ export function BatchView({
                       }
                     );
                     setBatchExplanation(response.data);
-                  } catch (error) {
+                  } catch {
                     toast({
                       title: "Error",
-                      description: "Failed to generate explanation. Please try again.",
+                      description:
+                        "Failed to generate explanation. Please try again.",
                       variant: "destructive",
                     });
                   } finally {

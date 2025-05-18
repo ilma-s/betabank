@@ -1,4 +1,5 @@
 import { PersonaWithDataset } from '@/types/persona';
+import { Transaction } from '@/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -57,7 +58,7 @@ export const createPersonaWithDistribution = async (
 export const createPersonaWithDataset = async (
   name: string,
   description: string,
-  dataset: any[]
+  dataset: Transaction[]
 ): Promise<{ id: number; message: string }> => {
   const response = await fetch(`${API_BASE_URL}/create-persona`, {
     method: 'POST',

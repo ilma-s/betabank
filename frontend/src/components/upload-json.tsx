@@ -1,14 +1,15 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "./ui/textarea";
 import { Alert, AlertDescription, AlertTitle } from "./ui/alert";
-import { createPersonaWithDataset } from "@/lib/api";
 import { useToast } from "@/components/ui/use-toast";
 import { Info } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { Transaction } from "@/types";
+import { createPersonaWithDataset } from "@/lib/api";
 
 interface UploadJsonProps {
   onSuccess?: () => void;
@@ -31,37 +32,40 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
   const { logout } = useAuth();
   const router = useRouter();
 
-  const validateJsonSyntax = (jsonString: string): { isValid: boolean; error?: ValidationError } => {
+  const validateJsonSyntax = (
+    jsonString: string
+  ): { isValid: boolean; error?: ValidationError } => {
     try {
-      // First try to parse the JSON
-      const parsed = JSON.parse(jsonString);
-      
-      // Check if it's properly formatted (no trailing commas, proper quotes, etc.)
       if (jsonString.includes(",]") || jsonString.includes(",}")) {
         return {
           isValid: false,
-          error: { message: "Invalid JSON: Found trailing comma" }
+          error: { message: "Invalid JSON: Found trailing comma" },
         };
       }
-      
-      // Check for single quotes instead of double quotes
+
       if (jsonString.match(/'[^']*'/)) {
         return {
           isValid: false,
-          error: { message: "Invalid JSON: Use double quotes (\") instead of single quotes (')" }
+          error: {
+            message:
+              "Invalid JSON: Use double quotes (\") instead of single quotes (')",
+          },
         };
       }
-      
-      // Check for unquoted property names - only check actual object properties
+
       const unquotedPropRegex = /[{,]\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*:/g;
       let match;
       while ((match = unquotedPropRegex.exec(jsonString)) !== null) {
-        // Skip if the property is actually quoted
-        const beforeMatch = jsonString.substring(0, match.index + match[0].indexOf(match[1]));
+        const beforeMatch = jsonString.substring(
+          0,
+          match.index + match[0].indexOf(match[1])
+        );
         if (!beforeMatch.endsWith('"')) {
           return {
             isValid: false,
-            error: { message: `Invalid JSON: Property names must be enclosed in double quotes: "${match[1]}"` }
+            error: {
+              message: `Invalid JSON: Property names must be enclosed in double quotes: "${match[1]}"`,
+            },
           };
         }
       }
@@ -69,44 +73,46 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
       return { isValid: true };
     } catch (e) {
       if (e instanceof Error) {
-        // Try to extract line and position information from the error message
         const posMatch = e.message.match(/position (\d+)/);
         const position = posMatch ? parseInt(posMatch[1]) : undefined;
-        
-        // Calculate line number from position
+
         let line;
         if (position) {
-          line = jsonString.substring(0, position).split('\n').length;
+          line = jsonString.substring(0, position).split("\n").length;
         }
-        
+
         return {
           isValid: false,
           error: {
-            message: e.message.replace(/^JSON\.parse: /, 'Invalid JSON: '),
+            message: e.message.replace(/^JSON\.parse: /, "Invalid JSON: "),
             line,
-            position
-          }
+            position,
+          },
         };
       }
       return {
         isValid: false,
-        error: { message: "Invalid JSON format" }
+        error: { message: "Invalid JSON format" },
       };
     }
   };
 
-  const validateTransactionData = (data: any): { isValid: boolean; error?: ValidationError } => {
+  const validateTransactionData = (
+    data: unknown
+  ): { isValid: boolean; error?: ValidationError } => {
     if (!Array.isArray(data)) {
       return {
         isValid: false,
-        error: { message: "Invalid format: File must contain an array of transactions" }
+        error: {
+          message: "Invalid format: File must contain an array of transactions",
+        },
       };
     }
 
     if (data.length === 0) {
       return {
         isValid: false,
-        error: { message: "Invalid dataset: File contains no transactions" }
+        error: { message: "Invalid dataset: File contains no transactions" },
       };
     }
 
@@ -118,66 +124,77 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
       "creditorAccount",
       "debtorName",
       "debtorAccount",
-      "remittanceInformationUnstructured"
+      "remittanceInformationUnstructured",
     ];
 
     for (let i = 0; i < data.length; i++) {
       const transaction = data[i];
-      
-      // Check required fields
-      const missingFields = requiredFields.filter(field => !(field in transaction));
+
+      const missingFields = requiredFields.filter(
+        (field) => !(field in transaction)
+      );
       if (missingFields.length > 0) {
         return {
           isValid: false,
           error: {
-            message: `Transaction ${i + 1}: Missing required fields: ${missingFields.join(", ")}`,
-            line: i + 1
-          }
+            message: `Transaction ${
+              i + 1
+            }: Missing required fields: ${missingFields.join(", ")}`,
+            line: i + 1,
+          },
         };
       }
 
-      // Validate transactionAmount structure
-      if (!transaction.transactionAmount?.amount || !transaction.transactionAmount?.currency) {
+      if (
+        !transaction.transactionAmount?.amount ||
+        !transaction.transactionAmount?.currency
+      ) {
         return {
           isValid: false,
           error: {
-            message: `Transaction ${i + 1}: transactionAmount must contain 'amount' and 'currency'`,
-            line: i + 1
-          }
+            message: `Transaction ${
+              i + 1
+            }: transactionAmount must contain 'amount' and 'currency'`,
+            line: i + 1,
+          },
         };
       }
 
-      // Validate amount format
       const amount = parseFloat(transaction.transactionAmount.amount);
       if (isNaN(amount)) {
         return {
           isValid: false,
           error: {
             message: `Transaction ${i + 1}: Invalid amount format`,
-            line: i + 1
-          }
+            line: i + 1,
+          },
         };
       }
 
-      // Validate date format
       if (isNaN(Date.parse(transaction.bookingDateTime))) {
         return {
           isValid: false,
           error: {
-            message: `Transaction ${i + 1}: bookingDateTime must be a valid ISO date string`,
-            line: i + 1
-          }
+            message: `Transaction ${
+              i + 1
+            }: bookingDateTime must be a valid ISO date string`,
+            line: i + 1,
+          },
         };
       }
 
-      // Validate account structures
-      if (!transaction.creditorAccount?.iban || !transaction.debtorAccount?.iban) {
+      if (
+        !transaction.creditorAccount?.iban ||
+        !transaction.debtorAccount?.iban
+      ) {
         return {
           isValid: false,
           error: {
-            message: `Transaction ${i + 1}: Both creditor and debtor accounts must contain IBAN`,
-            line: i + 1
-          }
+            message: `Transaction ${
+              i + 1
+            }: Both creditor and debtor accounts must contain IBAN`,
+            line: i + 1,
+          },
         };
       }
     }
@@ -189,7 +206,7 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
     const selectedFile = e.target.files?.[0];
     setError(null);
     setJsonPreview(null);
-    
+
     if (!selectedFile) {
       setError({ message: "Please select a file" });
       setFile(null);
@@ -204,8 +221,7 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
 
     try {
       const fileContent = await selectedFile.text();
-      
-      // Validate JSON syntax
+
       const syntaxValidation = validateJsonSyntax(fileContent);
       if (!syntaxValidation.isValid) {
         setError(syntaxValidation.error!);
@@ -213,8 +229,7 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
         return;
       }
 
-      // Parse and validate transaction data
-      const jsonData = JSON.parse(fileContent);
+      const jsonData = JSON.parse(fileContent) as Transaction[];
       const dataValidation = validateTransactionData(jsonData);
       if (!dataValidation.isValid) {
         setError(dataValidation.error!);
@@ -222,11 +237,12 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
         return;
       }
 
-      // If all validations pass, set the file and show a preview
       setFile(selectedFile);
-      setJsonPreview(JSON.stringify(jsonData[0], null, 2)); // Show first transaction as preview
+      setJsonPreview(JSON.stringify(jsonData[0], null, 2));
     } catch (err) {
-      setError({ message: err instanceof Error ? err.message : "Failed to read file" });
+      setError({
+        message: err instanceof Error ? err.message : "Failed to read file",
+      });
       setFile(null);
     }
   };
@@ -241,34 +257,29 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
     setIsLoading(true);
     try {
       const fileContent = await file.text();
-      const jsonData = JSON.parse(fileContent);
+      const jsonData = JSON.parse(fileContent) as Transaction[];
+      
+      await createPersonaWithDataset(name, description, jsonData);
 
-      const result = await createPersonaWithDataset(
-        name,
-        description,
-        jsonData
-      );
       toast({
         title: "Success",
         description: "Custom persona created successfully",
       });
 
-      // Reset form
       setFile(null);
       setName("");
       setDescription("");
       setError(null);
       setJsonPreview(null);
 
-      // Call onSuccess callback if provided
       onSuccess?.();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to create persona";
-      
-      // Handle authentication errors
-      if (errorMessage.includes('401')) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to create persona";
+
+      if (errorMessage.includes("401")) {
         logout();
-        router.push('/');
+        router.push("/");
         toast({
           title: "Authentication Error",
           description: "Your session has expired. Please log in again.",
@@ -346,7 +357,10 @@ export function UploadJson({ onSuccess }: UploadJsonProps) {
       </div>
 
       {error && (
-        <Alert variant="destructive" className="bg-white border-[#261436] border">
+        <Alert
+          variant="destructive"
+          className="bg-white border-[#261436] border"
+        >
           <AlertTitle className="text-[#261436]">Validation Error</AlertTitle>
           <AlertDescription className="text-[#261436] font-medium">
             {error.message}

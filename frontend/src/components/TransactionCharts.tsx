@@ -9,8 +9,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
-  LabelList,
 } from "recharts";
 import {
   Card,
@@ -18,32 +16,25 @@ import {
   CardHeader,
   CardTitle,
   CardDescription,
-  CardFooter,
 } from "@/components/ui/card";
-import { TrendingUp } from "lucide-react";
 import { useMemo, useCallback } from "react";
-import {
-  ChartConfig,
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "./ui/chart";
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from "./ui/chart";
+import { Transaction } from "@/types";
 
-const COLORS = {
-  Crypto: "hsl(var(--chart-1))",
-  Shopping: "hsl(var(--chart-2))",
-  Transport: "hsl(var(--chart-3))",
-  Utilities: "hsl(var(--chart-4))",
-  Dining: "hsl(var(--chart-5))",
-  Subscriptions: "hsl(var(--chart-6))",
-  ATM: "hsl(var(--chart-7))",
-  Refunds: "hsl(var(--chart-8))",
-  Groceries: "hsl(var(--chart-9))",
-  Salary: "hsl(var(--chart-10))",
-};
+interface CategoryData {
+  count: number;
+  amount: number;
+}
+
+interface ChartConfig {
+  [key: string]: {
+    label: string;
+    color: string;
+  };
+}
 
 interface TransactionChartsProps {
-  transactions: any[];
+  transactions: Transaction[];
   personaType: string;
 }
 
@@ -51,10 +42,9 @@ export function TransactionCharts({
   transactions,
   personaType,
 }: TransactionChartsProps) {
-  // Calculate category distribution
   const categoryDistribution = useMemo(
     () =>
-      transactions.reduce((acc: any, tx) => {
+      transactions.reduce((acc: Record<string, CategoryData>, tx) => {
         const category = tx.category;
         if (!acc[category]) {
           acc[category] = { count: 0, amount: 0 };
@@ -66,7 +56,6 @@ export function TransactionCharts({
     [transactions]
   );
 
-  // Get critical category based on persona
   const getCriticalCategory = useCallback(() => {
     switch (personaType.toLowerCase()) {
       case "gambling addict":
@@ -99,59 +88,60 @@ export function TransactionCharts({
     [transactions, criticalCategory]
   );
 
-  const chartConfig = {
-    value: {
-      label: "Transactions",
-      color: "hsl(var(--chart-1))",
-    },
-    Crypto: {
-      label: "Crypto",
-      color: "hsl(var(--chart-1))",
-    },
-    Shopping: {
-      label: "Shopping",
-      color: "hsl(var(--chart-2))",
-    },
-    Transport: {
-      label: "Transport",
-      color: "hsl(var(--chart-3))",
-    },
-    Utilities: {
-      label: "Utilities",
-      color: "hsl(var(--chart-4))",
-    },
-    Dining: {
-      label: "Dining",
-      color: "hsl(var(--chart-5))",
-    },
-    Subscriptions: {
-      label: "Subscriptions",
-      color: "hsl(var(--chart-6))",
-    },
-    ATM: {
-      label: "ATM Withdrawals",
-      color: "hsl(var(--chart-7))",
-    },
-    Refunds: {
-      label: "Refunds",
-      color: "hsl(var(--chart-8))",
-    },
-    Groceries: {
-      label: "Groceries",
-      color: "hsl(var(--chart-9))",
-    },
-    Salary: {
-      label: "Salary",
-      color: "hsl(var(--chart-10))",
-    },
-  } as const;
+  const chartConfig = useMemo<ChartConfig>(
+    () => ({
+      value: {
+        label: "Transactions",
+        color: "hsl(var(--chart-1))",
+      },
+      Crypto: {
+        label: "Crypto",
+        color: "hsl(var(--chart-1))",
+      },
+      Shopping: {
+        label: "Shopping",
+        color: "hsl(var(--chart-2))",
+      },
+      Transport: {
+        label: "Transport",
+        color: "hsl(var(--chart-3))",
+      },
+      Utilities: {
+        label: "Utilities",
+        color: "hsl(var(--chart-4))",
+      },
+      Dining: {
+        label: "Dining",
+        color: "hsl(var(--chart-5))",
+      },
+      Subscriptions: {
+        label: "Subscriptions",
+        color: "hsl(var(--chart-6))",
+      },
+      ATM: {
+        label: "ATM Withdrawals",
+        color: "hsl(var(--chart-7))",
+      },
+      Refunds: {
+        label: "Refunds",
+        color: "hsl(var(--chart-8))",
+      },
+      Groceries: {
+        label: "Groceries",
+        color: "hsl(var(--chart-9))",
+      },
+      Salary: {
+        label: "Salary",
+        color: "hsl(var(--chart-10))",
+      },
+    }),
+    []
+  );
 
-  // Convert to array format for charts and calculate percentages
-  const totalTransactions = transactions.length;
   const pieData = useMemo(
     () =>
       Object.entries(categoryDistribution).map(
-        ([category, data]: [string, any]) => ({
+        ([category, data]: [string, CategoryData]) => ({
           name: category,
           value: data.count,
           amount: data.amount,
@@ -160,39 +150,11 @@ export function TransactionCharts({
             "hsl(var(--chart-1))",
         })
       ),
-    [categoryDistribution]
+    [categoryDistribution, chartConfig]
   );
-
-  const totalAmount = useMemo(() => {
-    return transactions.reduce(
-      (acc, tx) => acc + parseFloat(tx.transactionAmount.amount),
-      0
-    );
-  }, [transactions]);
-
-  const averageAmount = useMemo(() => {
-    return totalAmount / totalTransactions;
-  }, [totalAmount, totalTransactions]);
-
-  const maxAmount = useMemo(() => {
-    return Math.max(
-      ...transactions.map((tx) => parseFloat(tx.transactionAmount.amount))
-    );
-  }, [transactions]);
-
-  const minAmount = useMemo(() => {
-    return Math.min(
-      ...transactions.map((tx) => parseFloat(tx.transactionAmount.amount))
-    );
-  }, [transactions]);
-
-  const numCategories = useMemo(() => {
-    return Object.keys(categoryDistribution).length;
-  }, [categoryDistribution]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {/* Pie Chart */}
       <Card className="flex flex-col">
         <CardHeader className="items-center pb-0">
           <CardTitle>Category Distribution</CardTitle>
@@ -214,9 +176,9 @@ export function TransactionCharts({
                 cy="50%"
                 outerRadius={100}
                 isAnimationActive={false}
-                label={undefined} // <- safest to explicitly unset
-                labelLine={false} // <- hides lines
-                nameKey={undefined} // <- disables name-based labeling
+                label={undefined}
+                labelLine={false}
+                nameKey={undefined}
               >
                 {pieData.map((entry, index) => (
                   <Cell
@@ -230,7 +192,6 @@ export function TransactionCharts({
         </CardContent>
       </Card>
 
-      {/* Bar Chart for Critical Category */}
       {criticalCategory && (
         <Card>
           <CardHeader>

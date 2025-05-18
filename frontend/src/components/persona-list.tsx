@@ -74,7 +74,6 @@ export function PersonaList() {
             <CardDescription>{persona.description}</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Add any additional persona information here */}
           </CardContent>
         </Card>
       ))}

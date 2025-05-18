@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   Line,
   BarChart,
@@ -17,8 +17,6 @@ import {
   ScatterChart,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Download, Settings } from "lucide-react";
 import { Transaction } from "@/types";
 import {
   Carousel,
@@ -27,24 +25,19 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "src/components/ui/carousel";
-import { DistributionEditor } from "./DistributionEditor";
 
 interface BatchAnalyticsProps {
   transactions: Transaction[];
 }
 
-export function BatchAnalytics({ 
-  transactions
-}: BatchAnalyticsProps) {
+export function BatchAnalytics({ transactions }: BatchAnalyticsProps) {
   const analytics = useMemo(() => {
-    // Sort transactions by date
     const sortedTransactions = [...transactions].sort(
       (a, b) =>
         new Date(a.bookingDateTime).getTime() -
         new Date(b.bookingDateTime).getTime()
     );
 
-    // Separate income and expense transactions
     const { income, expenses } = sortedTransactions.reduce(
       (acc, tx) => {
         const amount = parseFloat(tx.transactionAmount.amount);
@@ -58,17 +51,26 @@ export function BatchAnalytics({
       { income: [] as Transaction[], expenses: [] as Transaction[] }
     );
 
-    // Calculate amounts for metrics
-    const amounts = sortedTransactions.map((tx) =>
-      parseFloat(tx.transactionAmount.amount)
+    const totalIncome = income.reduce(
+      (sum, tx) => sum + parseFloat(tx.transactionAmount.amount),
+      0
     );
-    const totalIncome = income.reduce((sum, tx) => sum + parseFloat(tx.transactionAmount.amount), 0);
-    const totalExpenses = Math.abs(expenses.reduce((sum, tx) => sum + parseFloat(tx.transactionAmount.amount), 0));
+    const totalExpenses = Math.abs(
+      expenses.reduce(
+        (sum, tx) => sum + parseFloat(tx.transactionAmount.amount),
+        0
+      )
+    );
     const netAmount = totalIncome - totalExpenses;
 
-    // Category distribution with separate income/expense tracking
     const categoryDistribution = sortedTransactions.reduce(
-      (acc: Record<string, { count: number; amount: number; isIncome: boolean }>, tx) => {
+      (
+        acc: Record<
+          string,
+          { count: number; amount: number; isIncome: boolean }
+        >,
+        tx
+      ) => {
         const amount = parseFloat(tx.transactionAmount.amount);
         if (!acc[tx.category]) {
           acc[tx.category] = { count: 0, amount: 0, isIncome: amount >= 0 };
@@ -80,7 +82,6 @@ export function BatchAnalytics({
       {}
     );
 
-    // Sort categories by absolute amount in descending order
     const sortedCategories = Object.entries(categoryDistribution)
       .map(([category, data]) => ({
         name: category,
@@ -89,22 +90,33 @@ export function BatchAnalytics({
         count: data.count,
         isIncome: data.isIncome,
         percentage: ((data.count / sortedTransactions.length) * 100).toFixed(1),
-        amountPercentage: ((Math.abs(data.amount) / (data.isIncome ? totalIncome : totalExpenses)) * 100).toFixed(1)
+        amountPercentage: (
+          (Math.abs(data.amount) /
+            (data.isIncome ? totalIncome : totalExpenses)) *
+          100
+        ).toFixed(1),
       }))
       .sort((a, b) => Math.abs(b.actualAmount) - Math.abs(a.actualAmount));
 
-    // Daily transaction volume and amounts with income/expense split
+    interface DailyMetric {
+      date: string;
+      count: number;
+      income: number;
+      expenses: number;
+      net: number;
+    }
+
     const dailyMetrics = sortedTransactions.reduce(
-      (acc: Record<string, any>, tx) => {
+      (acc: Record<string, DailyMetric>, tx) => {
         const date = new Date(tx.bookingDateTime).toLocaleDateString();
         const amount = parseFloat(tx.transactionAmount.amount);
         if (!acc[date]) {
-          acc[date] = { 
-            date, 
-            count: 0, 
-            income: 0, 
+          acc[date] = {
+            date,
+            count: 0,
+            income: 0,
             expenses: 0,
-            net: 0 
+            net: 0,
           };
         }
         acc[date].count += 1;
@@ -119,7 +131,6 @@ export function BatchAnalytics({
       {}
     );
 
-    // Transaction size analysis with income/expense flag
     const transactionSizes = sortedTransactions.map((tx) => {
       const amount = parseFloat(tx.transactionAmount.amount);
       return {
@@ -127,11 +138,10 @@ export function BatchAnalytics({
         actualAmount: amount,
         category: tx.category,
         date: new Date(tx.bookingDateTime).toLocaleDateString(),
-        isIncome: amount >= 0
+        isIncome: amount >= 0,
       };
     });
 
-    // Hour of day distribution with income/expense split
     const hourlyDistribution = sortedTransactions.reduce(
       (acc: Record<number, { income: number; expenses: number }>, tx) => {
         const hour = new Date(tx.bookingDateTime).getHours();
@@ -162,11 +172,10 @@ export function BatchAnalytics({
       totalExpenses,
       netAmount,
       incomeCount: income.length,
-      expenseCount: expenses.length
+      expenseCount: expenses.length,
     };
   }, [transactions]);
 
-  // Calculate key metrics
   const metrics = useMemo(() => {
     return {
       totalTransactions: transactions.length,
@@ -176,8 +185,14 @@ export function BatchAnalytics({
       incomeCount: analytics.incomeCount,
       expenseCount: analytics.expenseCount,
       numCategories: new Set(transactions.map((tx) => tx.category)).size,
-      avgIncomeSize: analytics.incomeCount > 0 ? analytics.totalIncome / analytics.incomeCount : 0,
-      avgExpenseSize: analytics.expenseCount > 0 ? analytics.totalExpenses / analytics.expenseCount : 0,
+      avgIncomeSize:
+        analytics.incomeCount > 0
+          ? analytics.totalIncome / analytics.incomeCount
+          : 0,
+      avgExpenseSize:
+        analytics.expenseCount > 0
+          ? analytics.totalExpenses / analytics.expenseCount
+          : 0,
     };
   }, [transactions, analytics]);
 
@@ -196,7 +211,6 @@ export function BatchAnalytics({
 
   return (
     <div className="space-y-6">
-      {/* Key Metrics */}
       <div className="grid grid-cols-3 md:grid-cols-3 gap-2">
         <Card className="p-1">
           <CardHeader className="p-1">
@@ -244,8 +258,13 @@ export function BatchAnalytics({
             </CardTitle>
           </CardHeader>
           <CardContent className="p-1">
-            <p className={`text-lg font-bold ${metrics.netAmount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {metrics.netAmount >= 0 ? '+' : ''}{metrics.netAmount.toFixed(2)} EUR
+            <p
+              className={`text-lg font-bold ${
+                metrics.netAmount >= 0 ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {metrics.netAmount >= 0 ? "+" : ""}
+              {metrics.netAmount.toFixed(2)} EUR
             </p>
           </CardContent>
         </Card>
@@ -278,11 +297,9 @@ export function BatchAnalytics({
         </Card>
       </div>
 
-      {/* Charts Carousel */}
       <div className="w-full">
         <Carousel className="w-full">
           <CarouselContent>
-            {/* Category Distribution */}
             <CarouselItem>
               <Card className="p-4">
                 <CardHeader className="p-4 pb-2">
@@ -306,17 +323,26 @@ export function BatchAnalytics({
                             label={false}
                             labelLine={false}
                           >
-                            {analytics.categoryDistribution.map((entry, index) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={COLORS[index % COLORS.length]}
-                              />
-                            ))}
+                            {analytics.categoryDistribution.map(
+                              (entry, index) => (
+                                <Cell
+                                  key={`cell-${index}`}
+                                  fill={COLORS[index % COLORS.length]}
+                                />
+                              )
+                            )}
                           </Pie>
                           <Tooltip
-                            formatter={(value: number, name: string, props: any) => {
-                              const entry = props.payload;
-                              return [`${entry.actualAmount >= 0 ? '+' : ''}${entry.actualAmount.toFixed(2)} EUR`, name];
+                            formatter={(
+                              value: number,
+                              name: string
+                            ): [string, string] => {
+                              return [
+                                `${value >= 0 ? "+" : ""}${value.toFixed(
+                                  2
+                                )} EUR`,
+                                name,
+                              ];
                             }}
                           />
                           <Legend />
@@ -324,33 +350,58 @@ export function BatchAnalytics({
                       </ResponsiveContainer>
                     </div>
                     <div className="flex flex-col h-[400px]">
-                      <h3 className="font-semibold mb-2 p-4">Category Distribution</h3>
+                      <h3 className="font-semibold mb-2 p-4">
+                        Category Distribution
+                      </h3>
                       <div className="overflow-y-auto flex-1 pr-2">
                         <div className="grid gap-3 p-4 pt-0">
-                          {analytics.categoryDistribution.map((category, index) => (
-                            <div key={category.name} className="space-y-2 pb-2 border-b last:border-b-0">
-                              <div className="flex items-center gap-2">
-                                <div 
-                                  className="w-3 h-3 rounded-full flex-shrink-0" 
-                                  style={{ 
-                                    backgroundColor: COLORS[index % COLORS.length]
-                                  }}
-                                />
-                                <span className="flex-1 font-medium">{category.name}</span>
-                              </div>
-                              <div className="grid gap-1 text-sm pl-5">
-                                <div className="text-gray-600">
-                                  {category.count} transactions ({category.percentage}% of total count)
-                                </div>
-                                <div className={category.isIncome ? 'text-green-600' : 'text-red-600'}>
-                                  {category.isIncome ? '+' : '-'}{Math.abs(category.actualAmount).toFixed(2)} EUR
-                                  <span className="text-gray-600 ml-1">
-                                    ({category.amountPercentage}% of {category.isIncome ? 'income' : 'expenses'})
+                          {analytics.categoryDistribution.map(
+                            (category, index) => (
+                              <div
+                                key={category.name}
+                                className="space-y-2 pb-2 border-b last:border-b-0"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className="w-3 h-3 rounded-full flex-shrink-0"
+                                    style={{
+                                      backgroundColor:
+                                        COLORS[index % COLORS.length],
+                                    }}
+                                  />
+                                  <span className="flex-1 font-medium">
+                                    {category.name}
                                   </span>
                                 </div>
+                                <div className="grid gap-1 text-sm pl-5">
+                                  <div className="text-gray-600">
+                                    {category.count} transactions (
+                                    {category.percentage}% of total count)
+                                  </div>
+                                  <div
+                                    className={
+                                      category.isIncome
+                                        ? "text-green-600"
+                                        : "text-red-600"
+                                    }
+                                  >
+                                    {category.isIncome ? "+" : "-"}
+                                    {Math.abs(category.actualAmount).toFixed(
+                                      2
+                                    )}{" "}
+                                    EUR
+                                    <span className="text-gray-600 ml-1">
+                                      ({category.amountPercentage}% of{" "}
+                                      {category.isIncome
+                                        ? "income"
+                                        : "expenses"}
+                                      )
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            )
+                          )}
                         </div>
                       </div>
                     </div>
@@ -359,7 +410,6 @@ export function BatchAnalytics({
               </Card>
             </CarouselItem>
 
-            {/* Daily Transaction Volume */}
             <CarouselItem>
               <Card className="p-4">
                 <CardHeader className="p-4 pb-2">
@@ -405,7 +455,6 @@ export function BatchAnalytics({
               </Card>
             </CarouselItem>
 
-            {/* Transaction Size Distribution */}
             <CarouselItem>
               <Card className="p-4">
                 <CardHeader className="p-4 pb-2">
@@ -441,7 +490,6 @@ export function BatchAnalytics({
               </Card>
             </CarouselItem>
 
-            {/* Hourly Distribution */}
             <CarouselItem>
               <Card className="p-4">
                 <CardHeader className="p-4 pb-2">
