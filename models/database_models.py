@@ -1,7 +1,37 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, JSON, DateTime, Float
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Text, JSON, DateTime, Float, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from utils.database import Base
+from datetime import datetime
+import enum
+
+# Constants for action types
+class ActionType:
+    BATCH_GENERATED = "batch_generated"
+    BATCH_DELETED = "batch_deleted"
+    BATCH_NAME_EDITED = "batch_name_edited"
+    TRANSACTION_EDITED = "transaction_edited"
+    TRANSACTION_DELETED = "transaction_deleted"
+    DISTRIBUTION_UPDATED = "distribution_updated"
+    PERSONA_CREATED = "persona_created"
+    PERSONA_UPDATED = "persona_updated"
+    BATCH_DOWNLOADED_CSV = "batch_downloaded_csv"
+    BATCH_DOWNLOADED_JSON = "batch_downloaded_json"
+    BATCH_DOWNLOADED_EXCEL = "batch_downloaded_excel"
+
+class AuditLog(Base):
+    __tablename__ = 'audit_logs'
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    action_type = Column(String, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    entity_type = Column(String, nullable=False)  # 'batch', 'transaction', 'persona'
+    entity_id = Column(String, nullable=False)    # ID of the affected entity
+    details = Column(JSON, nullable=True)         # Additional context about the action
+    
+    # Relationships
+    user = relationship("User", back_populates="audit_logs")
 
 class User(Base):
     __tablename__ = "users"
@@ -14,6 +44,7 @@ class User(Base):
     # Relationships
     personas = relationship("Persona", back_populates="user")
     transaction_batches = relationship("TransactionBatch", back_populates="user")
+    audit_logs = relationship("AuditLog", back_populates="user")
 
 
 class Persona(Base):
