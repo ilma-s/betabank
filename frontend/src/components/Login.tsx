@@ -59,7 +59,7 @@ export default function Login() {
                 id="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="bg-white border-gray-300"
+                className="bg-white border-gray-300 text-[#261436]"
                 placeholder="Enter username"
               />
             </div>
@@ -70,7 +70,7 @@ export default function Login() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="bg-white border-gray-300"
+                className="bg-white border-gray-300 text-[#261436]"
                 placeholder="Enter password"
               />
             </div>

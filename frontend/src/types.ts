@@ -20,9 +20,14 @@ export interface Transaction {
 }
 
 export interface Persona {
-  id: string;
+  id: number;
   name: string;
   description: string;
+  config_json?: {
+    dataset_path: string;
+    custom_distribution?: Record<string, number>;
+    use_for_training?: boolean;
+  };
 }
 
 export interface TransactionBatch {
@@ -34,4 +39,5 @@ export interface TransactionBatch {
   transaction_count: number;
   preview: any;
   months: number;
+  distribution?: Record<string, number>;
 } 

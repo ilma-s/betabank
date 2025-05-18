@@ -1,13 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Settings } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { Button } from "@/components/ui/button";
+import { DistributionEditor } from "./DistributionEditor";
 
 interface Batch {
   id: number;
   name: string;
   persona_name: string;
+  persona_id: number;
   created_at: string;
   transaction_count: number;
 }
@@ -16,12 +19,16 @@ interface BatchListProps {
   batches: Batch[];
   onBatchClick: (batchId: number) => void;
   onBatchDeleted: () => void;
+  onBatchUpdated: () => void;
+  token: string;
 }
 
 export function BatchList({
   batches,
   onBatchClick,
   onBatchDeleted,
+  onBatchUpdated,
+  token,
 }: BatchListProps) {
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
   const { toast } = useToast();
@@ -41,7 +48,7 @@ export function BatchList({
       const response = await fetch(`/api/batches/${batchId}`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
       });
 
@@ -75,26 +82,27 @@ export function BatchList({
           className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow cursor-pointer relative group"
         >
           <div className="flex justify-between items-start">
-            wrjfpwNEPFKNE
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-semibold text-lg">{batch.name}</h3>
-                <button
-                  onClick={(e) => handleDelete(e, batch.id)}
-                  disabled={isDeleting === batch.id}
-                  className={`p-1.5 rounded-full transition-opacity ${
-                    isDeleting === batch.id
-                      ? "opacity-50"
-                      : "opacity-0 group-hover:opacity-100"
-                  } hover:bg-red-100`}
-                  title="Delete batch"
-                >
-                  <Trash2 className="w-4 h-4 text-red-600" />
-                </button>
+                <div className="flex gap-1">
+                  <button
+                    onClick={(e) => handleDelete(e, batch.id)}
+                    disabled={isDeleting === batch.id}
+                    className={`p-1.5 rounded-full transition-opacity ${
+                      isDeleting === batch.id
+                        ? "opacity-50"
+                        : "opacity-0 group-hover:opacity-100"
+                    } hover:bg-red-100`}
+                    title="Delete batch"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </button>
+                </div>
               </div>
               <p className="text-sm text-gray-600">{batch.persona_name}</p>
               <p className="text-sm text-gray-500">
-                {new Date(batch.created_at).toLocaleDateString()} •{" "}
+                {new Date(batch.created_at).toLocaleDateString('en-GB')} •{" "}
                 {batch.transaction_count} transactions
               </p>
             </div>

@@ -7,6 +7,9 @@ from collections import defaultdict
 from scipy.stats import entropy
 from collections import Counter
 import random
+import boto3
+import os
+from urllib.parse import urlparse
 
 class TransactionDataProcessor:
     def __init__(self):
@@ -14,6 +17,35 @@ class TransactionDataProcessor:
         self.numerical_columns = ['amount']
         self.categorical_columns = ['category']
         self.temporal_columns = ['bookingDateTime']
+        
+        # Define income categories
+        self.income_categories = {'Salary', 'Refunds', 'Investment Returns', 'Interest', 'Deposits'}
+        
+        # Define subscription merchants with their fixed monthly amounts
+        self.subscription_merchants = {
+            'Netflix': 14.99,
+            'Spotify': 9.99,
+            'Amazon Prime': 7.99,
+            'Disney+': 8.99,
+            'Apple Music': 9.99,
+            'HBO Max': 14.99,
+            'YouTube Premium': 11.99,
+            'Microsoft 365': 6.99,
+            'PlayStation Plus': 9.99,
+            'Xbox Game Pass': 9.99
+        }
+
+        # Define utility merchants with their fixed monthly amounts
+        self.utility_merchants = {
+            'City Power': 89.99,  # Electricity
+            'Water Corp': 45.99,  # Water
+            'Gas Connect': 65.99,  # Gas
+            'Internet Plus': 49.99,  # Internet
+            'Mobile Network': 29.99,  # Mobile
+            'Waste Management': 19.99,  # Waste collection
+            'Home Insurance Co': 35.99,  # Home insurance
+            'Security Systems': 25.99,  # Security system
+        }
         
         # initialize dictionaries to store learned patterns
         self.merchant_by_category = defaultdict(list)
@@ -23,6 +55,29 @@ class TransactionDataProcessor:
         self.merchant_frequency = defaultdict(lambda: defaultdict(list))  # track merchant transaction dates
         self.previous_batch = None
         self.VARIETY_THRESHOLD = 0.5
+        
+        # Initialize S3 client if credentials are available
+        self.s3_client = None
+        required_vars = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
+        
+        # Debug: Print environment variables status
+        print("Checking AWS credentials:")
+        for var in required_vars:
+            print(f"{var} present: {var in os.environ}")
+        
+        if all(k in os.environ for k in required_vars):
+            try:
+                self.s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+                    aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+                    region_name=os.environ.get('AWS_REGION', 'eu-west-2')
+                )
+                print("Successfully initialized S3 client")
+            except Exception as e:
+                print(f"Error initializing S3 client: {str(e)}")
+        else:
+            print("Missing required AWS credentials in environment variables")
 
     def validate_temporal_patterns(self, data):
         """Validate temporal patterns in the data (salary and subscriptions/utilities payments)"""
@@ -122,8 +177,30 @@ class TransactionDataProcessor:
         return balanced
     
     def load_data(self, filepath):
-        with open(filepath, 'r') as f:
-            data = json.load(f)
+        """Load data from either local file or S3"""
+        # Parse the filepath to check if it's an S3 URL
+        if filepath.startswith('s3://'):
+            if not self.s3_client:
+                raise ValueError("AWS credentials not found in environment variables")
+            
+            # Parse S3 URL
+            parsed = urlparse(filepath)
+            bucket = parsed.netloc
+            key = parsed.path.lstrip('/')
+            
+            try:
+                # Get object from S3
+                response = self.s3_client.get_object(Bucket=bucket, Key=key)
+                data = json.loads(response['Body'].read().decode('utf-8'))
+            except Exception as e:
+                raise Exception(f"Error loading data from S3: {str(e)}")
+        else:
+            # Load from local file
+            try:
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+            except Exception as e:
+                raise Exception(f"Error loading local file: {str(e)}")
 
         data = self.balance_categories(data)
         self.learn_patterns(data)
@@ -152,6 +229,14 @@ class TransactionDataProcessor:
         merchants = self.merchant_by_category[category]
         descriptions = self.descriptions_by_category[category]
         
+        # Determine if this is an income transaction
+        is_income = category in self.income_categories
+        
+        # Adjust amount sign based on transaction type
+        amount = abs(amount)  # Make sure amount is positive first
+        if not is_income:
+            amount = -amount  # Make expenses negative
+        
         if not merchants or not any(merchants):  
             merchant = ""
             description = random.choice(descriptions) if descriptions else f"Transaction - {category}"
@@ -160,6 +245,8 @@ class TransactionDataProcessor:
             # use fixed price if merchant has one
             if merchant in self.fixed_price_merchants:
                 amount = self.fixed_price_merchants[merchant]
+                if not is_income:
+                    amount = -amount
             
             # find a description template that can accommodate the merchant
             valid_descriptions = [d for d in descriptions if '{}' in d]
@@ -178,22 +265,121 @@ class TransactionDataProcessor:
         denormalized_data = self.scaler.inverse_transform(numerical_data)
         
         transactions = []
+        base_timestamp = int(datetime.now().timestamp())
+        
+        # Group transactions by month to track salary, subscriptions, and utilities
+        monthly_salary = {}
+        monthly_subscriptions = {}  # Track subscription payments by month
+        monthly_utilities = {}  # Track utility payments by month
+        
+        # First pass: Create all transactions and track salary/subscriptions/utilities
+        temp_transactions = []
         for i in range(len(generated_data)):
             category_idx = np.argmax(categorical_data[i])
             category = self.category_columns[category_idx].replace('category_', '')
-            amount = abs(denormalized_data[i, 0])
-            
-            merchant_name, description, amount = self.generate_transaction_details(category, amount)
+            amount = denormalized_data[i, 0]
             
             timestamp = int(denormalized_data[i, 1])
             booking_date = datetime.fromtimestamp(timestamp)
+            month_key = f"{booking_date.year}-{booking_date.month}"
+            
+            # For salary transactions, track them by month
+            if category == "Salary":
+                if month_key not in monthly_salary:
+                    monthly_salary[month_key] = []
+                monthly_salary[month_key].append((i, amount, booking_date))
+                continue
+            
+            # For subscription transactions, track them by month
+            if category == "Subscriptions":
+                if month_key not in monthly_subscriptions:
+                    monthly_subscriptions[month_key] = {}
+                
+                # Choose a subscription merchant that hasn't been used this month
+                available_merchants = [
+                    m for m in self.subscription_merchants.keys()
+                    if m not in monthly_subscriptions[month_key]
+                ]
+                
+                if available_merchants:
+                    merchant = random.choice(available_merchants)
+                    monthly_subscriptions[month_key][merchant] = (i, booking_date)
+                    
+                    # Create subscription transaction with fixed amount
+                    transaction = {
+                        "transactionId": f"TX{base_timestamp + i}",
+                        "bookingDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
+                        "valueDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
+                        "transactionAmount": {
+                            "amount": f"{-self.subscription_merchants[merchant]:.2f}",
+                            "currency": "EUR"
+                        },
+                        "creditorName": merchant,
+                        "creditorAccount": {
+                            "iban": f"DE{np.random.randint(1000000000, 9999999999)}"
+                        },
+                        "debtorName": f"Person{np.random.randint(1000, 9999)}",
+                        "debtorAccount": {
+                            "iban": f"DE{np.random.randint(1000000000, 9999999999)}"
+                        },
+                        "remittanceInformationUnstructured": f"Monthly Subscription - {merchant}",
+                        "category": "Subscriptions"
+                    }
+                    temp_transactions.append(transaction)
+                continue
+
+            # For utility transactions, track them by month
+            if category == "Utilities":
+                if month_key not in monthly_utilities:
+                    monthly_utilities[month_key] = {}
+                
+                # Choose a utility merchant that hasn't been used this month
+                available_merchants = [
+                    m for m in self.utility_merchants.keys()
+                    if m not in monthly_utilities[month_key]
+                ]
+                
+                if available_merchants:
+                    merchant = random.choice(available_merchants)
+                    monthly_utilities[month_key][merchant] = (i, booking_date)
+                    
+                    # Create utility transaction with fixed amount
+                    transaction = {
+                        "transactionId": f"TX{base_timestamp + i}",
+                        "bookingDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
+                        "valueDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
+                        "transactionAmount": {
+                            "amount": f"{-self.utility_merchants[merchant]:.2f}",
+                            "currency": "EUR"
+                        },
+                        "creditorName": merchant,
+                        "creditorAccount": {
+                            "iban": f"DE{np.random.randint(1000000000, 9999999999)}"
+                        },
+                        "debtorName": f"Person{np.random.randint(1000, 9999)}",
+                        "debtorAccount": {
+                            "iban": f"DE{np.random.randint(1000000000, 9999999999)}"
+                        },
+                        "remittanceInformationUnstructured": f"Monthly Utility Bill - {merchant}",
+                        "category": "Utilities"
+                    }
+                    temp_transactions.append(transaction)
+                continue
+            
+            merchant_name, description, amount = self.generate_transaction_details(category, amount)
+            
+            # Format amount with sign for display
+            amount_str = f"{amount:.2f}"
+            
+            # Format date in dd/mm/yyyy format
+            formatted_date = booking_date.strftime("%d/%m/%Y %H:%M:%S")
             
             transaction = {
-                "transactionId": f"TX{np.random.randint(100000, 999999)}",
-                "bookingDateTime": booking_date.isoformat(),
-                "valueDateTime": booking_date.isoformat(),
+                "transactionId": f"TX{base_timestamp + i}",
+                "bookingDateTime": formatted_date,
+                "valueDateTime": formatted_date,
                 "transactionAmount": {
-                    "amount": f"{amount:.2f}",
+                    "amount": amount_str,
                     "currency": "EUR"
                 },
                 "creditorName": merchant_name,
@@ -207,9 +393,46 @@ class TransactionDataProcessor:
                 "remittanceInformationUnstructured": description,
                 "category": category
             }
-            transactions.append(transaction)
-            
-        return transactions 
+            temp_transactions.append(transaction)
+        
+        # Second pass: Add exactly one salary transaction per month
+        for month, salary_transactions in monthly_salary.items():
+            if salary_transactions:
+                # Choose the salary transaction with the date closest to the start of the month
+                salary_transactions.sort(key=lambda x: x[2].day)
+                chosen_salary = salary_transactions[0]
+                
+                merchant_name, description, amount = self.generate_transaction_details("Salary", chosen_salary[1])
+                
+                # Format salary date in dd/mm/yyyy format
+                salary_date = chosen_salary[2].replace(day=1)  # Always on the 1st
+                formatted_salary_date = salary_date.strftime("%d/%m/%Y %H:%M:%S")
+                
+                # Create the salary transaction
+                transaction = {
+                    "transactionId": f"TX{base_timestamp + chosen_salary[0]}",
+                    "bookingDateTime": formatted_salary_date,
+                    "valueDateTime": formatted_salary_date,
+                    "transactionAmount": {
+                        "amount": f"{amount:.2f}",
+                        "currency": "EUR"
+                    },
+                    "creditorName": "Employer Corp.",  # Fixed employer name for consistency
+                    "creditorAccount": {
+                        "iban": f"DE{np.random.randint(1000000000, 9999999999)}"
+                    },
+                    "debtorName": f"Person{np.random.randint(1000, 9999)}",
+                    "debtorAccount": {
+                        "iban": f"DE{np.random.randint(1000000000, 9999999999)}"
+                    },
+                    "remittanceInformationUnstructured": "Monthly Salary Payment",
+                    "category": "Salary"
+                }
+                temp_transactions.append(transaction)
+        
+        # Sort all transactions by date
+        transactions = sorted(temp_transactions, key=lambda x: datetime.strptime(x['bookingDateTime'], "%d/%m/%Y %H:%M:%S"))
+        return transactions
 
     def calculate_batch_features(self, transactions):
         """Calculate statistical features for a batch of transactions"""
@@ -349,3 +572,52 @@ class TransactionDataProcessor:
         }
 
         return target_distributions.get(persona_type.lower(), {}) 
+
+    def upload_dataset_to_s3(self, data: dict, username: str, dataset_name: str) -> str:
+        """
+        Upload a dataset to S3 in the user_datasets directory.
+        Returns the S3 URL of the uploaded dataset.
+        """
+        if not self.s3_client:
+            raise ValueError("AWS credentials not found in environment variables")
+
+        # Validate the dataset structure
+        required_fields = ['transactionAmount', 'bookingDateTime', 'category']
+        for transaction in data:
+            if not all(field in transaction for field in required_fields):
+                raise ValueError("Invalid dataset structure. Missing required fields.")
+
+        # Create a safe filename from the dataset name
+        safe_filename = "".join(c for c in dataset_name if c.isalnum() or c in ('-', '_')).lower()
+        key = f"user_datasets/{username}/{safe_filename}.json"
+        bucket = "synthetic-personas-training-datasets"
+
+        try:
+            # Upload to S3
+            self.s3_client.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=json.dumps(data),
+                ContentType='application/json'
+            )
+            return f"s3://{bucket}/{key}"
+        except Exception as e:
+            raise Exception(f"Error uploading to S3: {str(e)}")
+
+    def validate_custom_distribution(self, distribution: dict) -> bool:
+        """
+        Validate a custom category distribution.
+        Returns True if valid, raises ValueError if invalid.
+        """
+        if not distribution:
+            raise ValueError("Distribution cannot be empty")
+
+        # Validate values are numbers and sum to 1
+        try:
+            total = sum(float(val) for val in distribution.values())
+            if not (0.99 <= total <= 1.01):  # Allow small rounding errors
+                raise ValueError(f"Distribution must sum to 100% (got {total * 100}%)")
+        except (TypeError, ValueError):
+            raise ValueError("Distribution values must be numbers between 0 and 1")
+
+        return True 
