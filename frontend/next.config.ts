@@ -2,7 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
+    // Hardcode the API URL for production
+    NEXT_PUBLIC_API_URL: "http://ec2-35-179-171-39.eu-west-2.compute.amazonaws.com",
   },
   async headers() {
     return [
@@ -21,7 +22,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL}/:path*`,
+        destination: "http://ec2-35-179-171-39.eu-west-2.compute.amazonaws.com/:path*",
       },
     ];
   },
