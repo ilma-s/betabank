@@ -31,9 +31,8 @@ import axios, { AxiosError } from "axios";
 import { Parser } from "json2csv";
 import * as XLSX from "xlsx";
 import { Transaction, Persona, TransactionBatch } from "@/types";
-import { TransactionCharts } from "@/components/TransactionCharts";
 import { DistributionEditor } from "@/components/DistributionEditor";
-import { Trash2, Pencil, Settings } from "lucide-react";
+import { Pencil, Settings } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import Link from "next/link";
 import { BatchView } from "@/components/BatchView";
@@ -90,19 +89,26 @@ function Main() {
   useEffect(() => {
     if (token) {
       const loadInitialData = async () => {
-        console.log(
-          "Starting initial data load with token:",
-          token?.substring(0, 10) + "..."
-        );
+        console.log("Starting initial data load with token:", token?.substring(0, 10) + "...");
         setInitializing(true);
         try {
-          // Make sure headers are set before making API calls
-          console.log(
-            "Explicitly setting Authorization header for initial load"
-          );
+          // Set up axios defaults
           axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 
-          // Ensure all personas exist first
+          // First verify token is valid by making a simple API call
+          try {
+            await axios.get(`${API_BASE_URL}/personas`);
+          } catch (error: any) {
+            if (error.response?.status === 401) {
+              console.log("Token invalid, logging out user");
+              logout();
+              setError("Your session has expired. Please log in again.");
+              return;
+            }
+            throw error;
+          }
+
+          // Now that we know the token is valid, ensure personas and load data
           await axios.post(`${API_BASE_URL}/ensure-personas`);
 
           // Load data in parallel
@@ -118,10 +124,10 @@ function Main() {
           setError(null);
         } catch (error: any) {
           console.error("Failed to load initial data:", error);
-          if (error.response && error.response.status === 401) {
+          if (error.response?.status === 401) {
             console.log("Got 401 during initial load, user needs to re-login");
-            setError("You are not authorized. Please log in again.");
-            // We don't need to call logout() here as the interceptor will handle it
+            logout();
+            setError("Your session has expired. Please log in again.");
           } else {
             setError("Failed to load initial data. Please try again.");
           }
@@ -132,7 +138,7 @@ function Main() {
 
       loadInitialData();
     }
-  }, [token]);
+  }, [token, logout]);
 
   // The rest of the fetchPersonas and fetchBatches functions will be used for refreshing data
   const fetchPersonas = async () => {
@@ -167,8 +173,9 @@ function Main() {
     console.log("Generating transactions for persona:", selectedPersona);
     setLoading(true);
     try {
-      const response = await axios.get(
+      const response = await axios.post(
         `${API_BASE_URL}/generate/${selectedPersona}`,
+        null,
         {
           params: {
             batch_name: batchName || undefined,

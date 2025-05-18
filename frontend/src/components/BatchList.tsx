@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "./badge";
+import { Badge } from "./ui/badge";
 
 interface Batch {
   id: number;
@@ -192,7 +192,7 @@ export function BatchList({
               </Badge>
             )}
             <Button
-              variant="ghost"
+              variant="secondary"
               size="sm"
               className="text-[#261436] hover:bg-[#F1E6EA] h-6 px-2 text-xs"
               onClick={() => {

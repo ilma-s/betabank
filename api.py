@@ -8,11 +8,17 @@ import numpy as np
 import logging
 import torch
 import random
+import pandas as pd
+from sklearn.preprocessing import MinMaxScaler
 
 from models.wgan_gp import WGAN_GP
 from utils.data_processor import TransactionDataProcessor
 from utils.database import get_db
-from models.database_models import User, Persona, TransactionBatch, Transaction, AuditLog, ActionType
+from models.database_models import (
+    User, Persona, TransactionBatch, Transaction, 
+    AuditLog, ActionType, TransactionExplanation, BatchExplanation
+)
+from models.explanation_service import ExplanationService
 
 from passlib.context import CryptContext
 from jose import JWTError, jwt
@@ -31,10 +37,11 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],  # Frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 PERSONAS = {
@@ -48,7 +55,10 @@ models = {}
 data_processor = TransactionDataProcessor()
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    logger.debug(f"Verifying password. Plain: {plain_password}, Hash: {hashed_password}")
+    result = pwd_context.verify(plain_password, hashed_password)
+    logger.debug(f"Password verification result: {result}")
+    return result
 
 def get_password_hash(password):
     return pwd_context.hash(password)
@@ -319,11 +329,18 @@ async def generate_transactions(
         
         if not model:
             X, C = data_processor.load_data(dataset_path)
-            input_dim, condition_dim = X.shape[1], C.shape[1]
+            input_dim = X.shape[1]  # Number of numerical features
+            condition_dim = C.shape[1]  # Number of categories
             tensor_X, tensor_C = torch.FloatTensor(X), torch.FloatTensor(C)
             
             # Create model with optimized parameters
-            model = WGAN_GP(input_dim=input_dim, output_dim=input_dim, condition_dim=condition_dim)
+            # Note: Generator expects input_dim + condition_dim for the first layer
+            model = WGAN_GP(
+                input_dim=input_dim,  # Numerical features
+                output_dim=input_dim,  # Output same size as input
+                condition_dim=condition_dim,  # Number of categories
+                device=data_processor.device
+            )
             
             # Minimal training for speed
             n_epochs = 15  # Further reduced from 25
@@ -433,27 +450,62 @@ async def generate_transactions(
         db.flush()
         
         # Prepare all transactions at once
-        db_transactions = [
-            Transaction(
-                batch_id=batch.id,
-                transaction_id=tx["transactionId"],
-                booking_date_time=datetime.fromisoformat(tx["bookingDateTime"]),
-                value_date_time=datetime.fromisoformat(tx["valueDateTime"]),
-                amount=float(tx["transactionAmount"]["amount"]),
-                currency=tx["transactionAmount"]["currency"],
-                creditor_name=tx["creditorName"],
-                creditor_account_iban=tx["creditorAccount"]["iban"],
-                debtor_name=tx["debtorName"],
-                debtor_account_iban=tx["debtorAccount"]["iban"],
-                remittance_information_unstructured=tx["remittanceInformationUnstructured"],
-                category=tx["category"]
+        db_transactions = []
+        for tx in transactions:
+            # Parse the date string - handle both formats
+            try:
+                booking_date = datetime.strptime(tx["bookingDateTime"], "%d/%m/%Y %H:%M:%S")
+            except ValueError:
+                try:
+                    booking_date = datetime.fromisoformat(tx["bookingDateTime"])
+                except ValueError:
+                    logger.error(f"Invalid date format: {tx['bookingDateTime']}")
+                    raise HTTPException(status_code=500, detail=f"Invalid date format: {tx['bookingDateTime']}")
+            
+            value_date = booking_date  # Use same date for value_date
+            
+            db_transactions.append(
+                Transaction(
+                    batch_id=batch.id,
+                    transaction_id=tx["transactionId"],
+                    booking_date_time=booking_date,
+                    value_date_time=value_date,
+                    amount=float(tx["transactionAmount"]["amount"]),
+                    currency=tx["transactionAmount"]["currency"],
+                    creditor_name=tx["creditorName"],
+                    creditor_account_iban=tx["creditorAccount"]["iban"],
+                    debtor_name=tx["debtorName"],
+                    debtor_account_iban=tx["debtorAccount"]["iban"],
+                    remittance_information_unstructured=tx["remittanceInformationUnstructured"],
+                    category=tx["category"]
+                )
             )
-            for tx in transactions
-        ]
         
         # Bulk insert all transactions
         db.bulk_save_objects(db_transactions)
         db.commit()
+        
+        # Generate feature importances and explanations
+        feature_importances = []
+        for tx in transactions:
+            tx_tensor, condition_tensor = data_processor.transaction_to_tensor(tx)
+            with torch.no_grad():
+                _ = model.generator(tx_tensor, condition_tensor)
+                importance = model.generator.get_feature_importance()
+                # Convert importance tensor to dictionary format
+                importance_dict = {
+                    'amount': float(importance[0][0]),
+                    'day_of_month': float(importance[0][1])
+                }
+                # Add category importances
+                for i, cat in enumerate(data_processor.category_columns):
+                    category_name = cat.replace('category_', '')
+                    importance_dict[category_name] = float(importance[0][i + 2])  # Start at index 2 since we have 2 numerical features
+                feature_importances.append(importance_dict)
+        
+        # Generate explanations using the explanation service
+        explanation_service = ExplanationService(db)
+        explanation_service.process_batch(batch, feature_importances)
         
         # Create audit log for batch generation
         audit_log = AuditLog(
@@ -464,7 +516,8 @@ async def generate_transactions(
             details={
                 "persona_id": persona_id,
                 "months": months,
-                "transaction_count": len(transactions)
+                "transaction_count": len(transactions),
+                "explanations_generated": True
             }
         )
         db.add(audit_log)
@@ -735,7 +788,6 @@ async def download_batch(
 async def update_persona_distribution(
     persona_id: int,
     distribution: dict,
-    save_for_training: bool = False,
     batch_id: Optional[int] = None,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -749,6 +801,9 @@ async def update_persona_distribution(
         raise HTTPException(status_code=404, detail="Persona not found")
     
     try:
+        # Get the useForTraining flag from the request body
+        use_for_training = distribution.pop("useForTraining", True)
+        
         # Validate distribution values
         try:
             # Convert each value to float explicitly and log any errors
@@ -771,11 +826,12 @@ async def update_persona_distribution(
             logger.error(f"Error in distribution validation: {str(e)}")
             raise ValueError("Distribution values must be numbers")
         
+        # Store original distribution for audit
+        original_distribution = persona.config_json.get("custom_distribution", {}) if persona.config_json else {}
+        
         # Update persona config
         config = persona.config_json or {}
         config["custom_distribution"] = distribution
-        if save_for_training:
-            config["use_for_training"] = True
         persona.config_json = config
         
         # Create audit log for distribution update
@@ -786,11 +842,26 @@ async def update_persona_distribution(
             entity_id=str(persona_id),
             details={
                 "new_distribution": distribution,
-                "save_for_training": save_for_training,
+                "original_distribution": original_distribution,
+                "use_for_training": use_for_training,
                 "batch_id": batch_id
             }
         )
         db.add(audit_log)
+        
+        # If useForTraining is True, add to training data
+        if use_for_training:
+            training_data = TrainingData(
+                user_id=user.id,
+                data_type="distribution_update",
+                data={
+                    "persona_id": persona_id,
+                    "original_distribution": original_distribution,
+                    "new_distribution": distribution,
+                    "batch_id": batch_id
+                }
+            )
+            db.add(training_data)
         
         if batch_id:
             # Regenerate batch with new distribution
@@ -942,6 +1013,9 @@ async def update_transaction(
         
         transaction.edited = True
         
+        # Get the useForTraining flag
+        use_for_training = transaction_update.get("useForTraining", True)
+        
         # Create audit log for the edit
         audit_log = AuditLog(
             user_id=user.id,
@@ -956,10 +1030,30 @@ async def update_transaction(
                     "category": transaction.category,
                     "description": transaction.remittance_information_unstructured,
                     "creditor_name": transaction.creditor_name
-                }
+                },
+                "use_for_training": use_for_training
             }
         )
         db.add(audit_log)
+        
+        # If useForTraining is True, update the training data
+        if use_for_training:
+            # Add the transaction to the training dataset
+            training_data = TrainingData(
+                transaction_id=transaction_id,
+                batch_id=transaction.batch_id,
+                user_id=user.id,
+                data_type="transaction_edit",
+                data={
+                    "amount": transaction.amount,
+                    "category": transaction.category,
+                    "description": transaction.remittance_information_unstructured,
+                    "creditor_name": transaction.creditor_name,
+                    "original_values": original_values
+                }
+            )
+            db.add(training_data)
+        
         db.commit()
         
         return {
@@ -1026,3 +1120,180 @@ async def get_audit_logs(
             "details": log.details
         } for log in logs]
     }
+
+@app.get("/batches/{batch_id}/explanation")
+async def get_batch_explanation(
+    batch_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get explanation for a batch of transactions."""
+    # Find the batch and verify ownership
+    batch = db.query(TransactionBatch).filter(
+        TransactionBatch.id == batch_id,
+        TransactionBatch.user_id == user.id
+    ).first()
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    explanation = db.query(BatchExplanation).filter(
+        BatchExplanation.batch_id == batch_id
+    ).first()
+    
+    if not explanation:
+        raise HTTPException(status_code=404, detail="No explanation found for this batch")
+    
+    return {
+        "batch_id": batch_id,
+        "distribution_explanation": explanation.distribution_explanation,
+        "temporal_patterns": explanation.temporal_patterns,
+        "amount_patterns": explanation.amount_patterns,
+        "anomalies": explanation.anomalies,
+        "summary_text": explanation.summary_text
+    }
+
+@app.get("/transactions/{transaction_id}/explanation")
+async def get_transaction_explanation(
+    transaction_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get explanation for a specific transaction."""
+    # Find the transaction and verify ownership through batch
+    transaction = db.query(Transaction).filter(Transaction.transaction_id == transaction_id).first()
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    batch = db.query(TransactionBatch).filter(
+        TransactionBatch.id == transaction.batch_id,
+        TransactionBatch.user_id == user.id
+    ).first()
+    if not batch:
+        raise HTTPException(status_code=403, detail="Not authorized to access this transaction")
+    
+    explanation = db.query(TransactionExplanation).filter(
+        TransactionExplanation.transaction_id == transaction_id
+    ).first()
+    
+    if not explanation:
+        raise HTTPException(status_code=404, detail="No explanation found for this transaction")
+    
+    return {
+        "transaction_id": transaction_id,
+        "feature_importance": explanation.feature_importance,
+        "applied_patterns": explanation.applied_patterns,
+        "explanation_text": explanation.explanation_text,
+        "confidence_score": explanation.confidence_score,
+        "meta_info": explanation.meta_info
+    }
+
+@app.get("/debug/check-admin")
+async def check_admin(db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.username == "admin").first()
+    if user:
+        return {
+            "found": True,
+            "id": user.id,
+            "username": user.username,
+            "password_hash": user.password_hash,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        }
+    return {"found": False}
+
+@app.post("/debug/recreate-admin")
+async def recreate_admin(db: Session = Depends(get_db)):
+    # Delete existing admin if exists
+    db.query(User).filter(User.username == "admin").delete()
+    
+    # Create new admin user with fresh hash
+    password = "admin"
+    hashed_password = pwd_context.hash(password)
+    
+    new_user = User(
+        username="admin",
+        password_hash=hashed_password
+    )
+    
+    db.add(new_user)
+    db.commit()
+    
+    # Verify the password works
+    verification = verify_password("admin", hashed_password)
+    
+    return {
+        "message": "Admin user recreated",
+        "id": new_user.id,
+        "username": new_user.username,
+        "password_hash": hashed_password,
+        "verification_test": verification
+    }
+
+def transaction_to_tensor(self, tx):
+    """Convert a transaction to a tensor format suitable for the model."""
+    # Extract numerical features
+    try:
+        if isinstance(tx, dict):
+            amount = float(tx['transactionAmount']['amount'])
+        else:
+            amount = float(tx.amount)
+    except (KeyError, AttributeError):
+        logger.error(f"Invalid transaction format: {tx}")
+        raise ValueError("Invalid transaction format - missing amount field")
+
+    # Extract temporal features
+    try:
+        if isinstance(tx, dict):
+            booking_date = pd.to_datetime(tx['bookingDateTime'])
+        else:
+            booking_date = pd.to_datetime(tx.booking_date_time)
+    except (KeyError, AttributeError):
+        logger.error(f"Invalid transaction format: {tx}")
+        raise ValueError("Invalid transaction format - missing booking date field")
+
+    day_of_month = booking_date.day / 31.0
+    day_of_week = booking_date.dayofweek / 6.0
+    
+    # Create condition vector for category
+    try:
+        if isinstance(tx, dict):
+            category = tx['category']
+        else:
+            category = tx.category
+    except (KeyError, AttributeError):
+        logger.error(f"Invalid transaction format: {tx}")
+        raise ValueError("Invalid transaction format - missing category field")
+
+    category_vector = np.zeros(len(self.categorical_columns))
+    try:
+        if category.startswith('category_'):
+            category_name = category
+        else:
+            category_name = f"category_{category}"
+        category_idx = list(self.categorical_columns).index(category_name)
+        category_vector[category_idx] = 1
+    except ValueError:
+        # If category not found, use a random category
+        category_vector[random.randrange(len(self.categorical_columns))] = 1
+    
+    # Combine features
+    features = np.array([amount, day_of_month, day_of_week])
+    
+    # Normalize numerical features
+    if not hasattr(self, '_feature_scaler'):
+        self._feature_scaler = MinMaxScaler()
+        self._feature_scaler.fit(np.array([[0, 0, 0], [10000, 1, 1]]))
+    features = self._feature_scaler.transform(features.reshape(1, -1))[0]
+    
+    # Create tensors on CPU first
+    input_tensor = torch.FloatTensor(features).unsqueeze(0)
+    condition_tensor = torch.FloatTensor(category_vector).unsqueeze(0)
+    
+    # Move tensors to the correct device
+    input_tensor = input_tensor.to(self.device)
+    condition_tensor = condition_tensor.to(self.device)
+    
+    # Synchronize if using MPS device
+    if self.device.type == 'mps':
+        torch.mps.synchronize()
+    
+    return input_tensor, condition_tensor

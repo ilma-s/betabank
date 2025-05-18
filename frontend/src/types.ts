@@ -19,6 +19,99 @@ export interface Transaction {
   edited?: boolean;
 }
 
+export interface TransactionExplanationData {
+  transaction_id: string;
+  feature_importance: {
+    [key: string]: number;
+  };
+  applied_patterns: {
+    [key: string]: {
+      type: string;
+      value: any;
+    };
+  };
+  explanation_text: string;
+  confidence_score: number;
+  meta_info?: {
+    generated_at: string;
+    version: string;
+    [key: string]: any;
+  };
+}
+
+export interface BatchExplanationData {
+  batch_id: number;
+  distribution_explanation: {
+    amount_distribution: {
+      fixed_amounts: Array<{
+        amount: number;
+        frequency: number;
+        confidence: number;
+      }>;
+      amount_ranges: Array<{
+        mean: number;
+        std: number;
+        range: [number, number];
+        weight: number;
+      }>;
+    };
+    category_distribution: {
+      distribution: Record<string, {
+        count: number;
+        percentage: number;
+        average_amount: number;
+      }>;
+      transitions: Array<{
+        from: string;
+        to: string;
+        count: number;
+        probability: number;
+      }>;
+      temporal: Array<{
+        category: string;
+        patterns: any;
+      }>;
+    };
+    transaction_count: number;
+  };
+  temporal_patterns: {
+    regular_intervals: Array<{
+      interval_days: number;
+      confidence: number;
+    }>;
+    periodic_transactions: Array<{
+      day_of_month: number;
+      count: number;
+      confidence: number;
+    }>;
+    time_clusters: Array<{
+      hour: number;
+      density: number;
+      count: number;
+    }>;
+  };
+  amount_patterns: {
+    fixed_amounts: Array<{
+      amount: number;
+      frequency: number;
+      confidence: number;
+    }>;
+    amount_ranges: Array<{
+      mean: number;
+      std: number;
+      range: [number, number];
+      weight: number;
+    }>;
+  };
+  anomalies: Array<{
+    transaction_id: string;
+    amount: number;
+    reason: string;
+    expected_range: [number, number];
+  }>;
+  summary_text: string;
+}
+
 export interface Persona {
   id: number;
   name: string;

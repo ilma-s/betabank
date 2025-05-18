@@ -1,7 +1,7 @@
 import { Transaction } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Pencil, Trash2, Search, FilterIcon, X, ChevronDown, ChevronUp } from "lucide-react";
+import { Pencil, Trash2, Search, FilterIcon, X, ChevronDown, ChevronUp, Info } from "lucide-react";
 import { useState, useMemo } from "react";
 import { useToast } from "@/components/ui/use-toast";
 import axios from "axios";
@@ -22,7 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "./badge";
+import { Badge } from "./ui/badge";
+import { TransactionExplanation } from "./TransactionExplanation";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface TransactionListProps {
   transactions: Transaction[];
@@ -44,6 +51,7 @@ export function TransactionList({
     description: "",
     category: "",
     creditorName: "",
+    useForTraining: true,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -53,6 +61,10 @@ export function TransactionList({
   const [searchDate, setSearchDate] = useState("");
   const [transactionType, setTransactionType] = useState("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [explanation, setExplanation] = useState<any>(null);
+  const [loadingExplanation, setLoadingExplanation] = useState(false);
+  const [showExplanationDialog, setShowExplanationDialog] = useState(false);
 
   const categories = [
     "Shopping",
@@ -111,6 +123,7 @@ export function TransactionList({
       description: transaction.remittanceInformationUnstructured,
       category: transaction.category || "",
       creditorName: transaction.creditorName,
+      useForTraining: true,
     });
   };
 
@@ -129,6 +142,7 @@ export function TransactionList({
           remittanceInformationUnstructured: editedValues.description,
           category: editedValues.category,
           creditorName: editedValues.creditorName,
+          useForTraining: editedValues.useForTraining,
         },
         {
           headers: {
@@ -186,6 +200,31 @@ export function TransactionList({
     }
   };
 
+  const fetchExplanation = async (transactionId: string) => {
+    setLoadingExplanation(true);
+    try {
+      const response = await axios.get(
+        `http://localhost:8000/transactions/${transactionId}/explanation`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      setExplanation(response.data);
+      setSelectedTransactionId(transactionId);
+      setShowExplanationDialog(true);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load transaction explanation",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingExplanation(false);
+    }
+  };
+
   return (
     <>
       {(searchMerchant || searchCategory !== "" || searchDate || transactionType !== "all") && (
@@ -229,7 +268,7 @@ export function TransactionList({
             )}
           </div>
           <Button
-            variant="ghost"
+            variant="secondary"
             size="sm"
             className="text-[#261436] hover:bg-[#F1E6EA]"
             onClick={() => {
@@ -380,24 +419,31 @@ export function TransactionList({
                     <td className="p-3 text-right">
                       <div className="flex justify-end gap-2">
                         <Button
-                          variant="ghost"
+                          variant="secondary"
                           size="icon"
-                          className="h-8 w-8 text-[#261436] hover:text-[#261436]/80 hover:bg-[#F1E6EA]"
+                          onClick={() => fetchExplanation(transaction.transactionId)}
+                          disabled={loadingExplanation}
+                          className="bg-[#F1E6EA] hover:bg-[#F1E6EA]/80 text-[#261436]"
+                        >
+                          <Info className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="icon"
                           onClick={() => handleEdit(transaction)}
+                          className="bg-[#F1E6EA] hover:bg-[#F1E6EA]/80 text-[#261436]"
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
-                          variant="ghost"
+                          variant="secondary"
                           size="icon"
-                          className="h-8 w-8 text-red-600 hover:text-red-800 hover:bg-red-50"
-                          onClick={() =>
-                            handleDelete(transaction.transactionId)
-                          }
+                          onClick={() => handleDelete(transaction.transactionId)}
                           disabled={isDeleting === transaction.transactionId}
+                          className="bg-[#F1E6EA] hover:bg-[#F1E6EA]/80 text-[#261436]"
                         >
                           {isDeleting === transaction.transactionId ? (
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-600 border-t-transparent" />
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#261436] border-t-transparent" />
                           ) : (
                             <Trash2 className="h-4 w-4" />
                           )}
@@ -526,6 +572,41 @@ export function TransactionList({
                 className="w-full px-3 py-2 bg-white border border-[#261436]/20 rounded-md text-[#261436] focus:outline-none focus:ring-2 focus:ring-[#261436] focus:border-transparent"
               />
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="useForTraining"
+                checked={editedValues.useForTraining}
+                onChange={(e) =>
+                  setEditedValues((prev) => ({
+                    ...prev,
+                    useForTraining: e.target.checked,
+                  }))
+                }
+                className="h-4 w-4 rounded border-[#261436]/20 text-[#261436] focus:ring-[#261436]"
+              />
+              <Label
+                htmlFor="useForTraining"
+                className="text-sm font-medium text-[#261436] cursor-pointer flex items-center gap-2"
+              >
+                Use this update to improve future transaction generations
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger>
+                      <Info className="h-4 w-4 text-[#261436]/70" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="max-w-xs">
+                        When enabled, this transaction update will be used to train the model,
+                        helping it generate more accurate transactions in future batches.
+                        The model will learn from your edits to improve transaction amounts,
+                        descriptions, and categorizations.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </Label>
+            </div>
           </div>
           <DialogFooter className="gap-2 mt-6">
             <Button
@@ -547,6 +628,27 @@ export function TransactionList({
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showExplanationDialog} onOpenChange={setShowExplanationDialog}>
+        <DialogContent className="sm:max-w-[600px] bg-white">
+          <DialogHeader>
+            <DialogTitle>Transaction Explanation</DialogTitle>
+            <DialogDescription>
+              Understanding the patterns and factors behind this transaction
+            </DialogDescription>
+          </DialogHeader>
+          {explanation && (
+            <TransactionExplanation
+              transactionId={selectedTransactionId!}
+              feature_importance={explanation.feature_importance}
+              applied_patterns={explanation.applied_patterns}
+              explanation_text={explanation.explanation_text}
+              confidence_score={explanation.confidence_score}
+              meta_info={explanation.meta_info}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </>

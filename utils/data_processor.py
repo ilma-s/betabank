@@ -10,6 +10,7 @@ import random
 import boto3
 import os
 from urllib.parse import urlparse
+import torch
 
 class TransactionDataProcessor:
     def __init__(self):
@@ -17,6 +18,9 @@ class TransactionDataProcessor:
         self.numerical_columns = ['amount']
         self.categorical_columns = ['category']
         self.temporal_columns = ['bookingDateTime']
+        
+        # Force CPU device for better compatibility
+        self.device = torch.device("cpu")
         
         # Define income categories
         self.income_categories = {'Salary', 'Refunds', 'Investment Returns', 'Interest', 'Deposits'}
@@ -214,13 +218,28 @@ class TransactionDataProcessor:
         category_dummies = pd.get_dummies(df['category'], prefix='category')
         self.category_columns = category_dummies.columns
         self.condition_dim = category_dummies.shape[1]
+        print(f"Number of categories: {self.condition_dim}")
 
         normalized = self.scaler.fit_transform(df[['amount', 'timestamp']])
         X = normalized
         C = category_dummies.values
 
         self.output_dim = X.shape[1]  # For critic input
-        return X, C
+        print(f"Input shape: {X.shape}, Condition shape: {C.shape}")
+        
+        # Create tensors on CPU first
+        tensor_X = torch.FloatTensor(X)
+        tensor_C = torch.FloatTensor(C)
+        
+        # Move tensors to the correct device
+        tensor_X = tensor_X.to(self.device)
+        tensor_C = tensor_C.to(self.device)
+        
+        # Synchronize if using MPS device
+        if self.device.type == 'mps':
+            torch.mps.synchronize()
+        
+        return tensor_X, tensor_C
 
     def generate_transaction_details(self, category, amount):
         """Generate transaction details based on learned patterns"""
@@ -267,6 +286,19 @@ class TransactionDataProcessor:
         transactions = []
         base_timestamp = int(datetime.now().timestamp())
         
+        # Create a set to track used transaction IDs
+        used_transaction_ids = set()
+        
+        def generate_unique_transaction_id():
+            """Generate a unique transaction ID with timestamp and random component"""
+            while True:
+                # Combine timestamp with a random number for uniqueness
+                random_component = np.random.randint(1000000, 9999999)
+                tx_id = f"TX{base_timestamp}{random_component}"
+                if tx_id not in used_transaction_ids:
+                    used_transaction_ids.add(tx_id)
+                    return tx_id
+        
         # Group transactions by month to track salary, subscriptions, and utilities
         monthly_salary = {}
         monthly_subscriptions = {}  # Track subscription payments by month
@@ -307,7 +339,7 @@ class TransactionDataProcessor:
                     
                     # Create subscription transaction with fixed amount
                     transaction = {
-                        "transactionId": f"TX{base_timestamp + i}",
+                        "transactionId": generate_unique_transaction_id(),
                         "bookingDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
                         "valueDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
                         "transactionAmount": {
@@ -345,7 +377,7 @@ class TransactionDataProcessor:
                     
                     # Create utility transaction with fixed amount
                     transaction = {
-                        "transactionId": f"TX{base_timestamp + i}",
+                        "transactionId": generate_unique_transaction_id(),
                         "bookingDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
                         "valueDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
                         "transactionAmount": {
@@ -375,7 +407,7 @@ class TransactionDataProcessor:
             formatted_date = booking_date.strftime("%d/%m/%Y %H:%M:%S")
             
             transaction = {
-                "transactionId": f"TX{base_timestamp + i}",
+                "transactionId": generate_unique_transaction_id(),
                 "bookingDateTime": formatted_date,
                 "valueDateTime": formatted_date,
                 "transactionAmount": {
@@ -410,7 +442,7 @@ class TransactionDataProcessor:
                 
                 # Create the salary transaction
                 transaction = {
-                    "transactionId": f"TX{base_timestamp + chosen_salary[0]}",
+                    "transactionId": generate_unique_transaction_id(),
                     "bookingDateTime": formatted_salary_date,
                     "valueDateTime": formatted_salary_date,
                     "transactionAmount": {
@@ -620,4 +652,74 @@ class TransactionDataProcessor:
         except (TypeError, ValueError):
             raise ValueError("Distribution values must be numbers between 0 and 1")
 
-        return True 
+        return True
+
+    def transaction_to_tensor(self, tx):
+        """Convert a transaction to a tensor format suitable for the model."""
+        # Extract numerical features
+        try:
+            if isinstance(tx, dict):
+                amount = float(tx['transactionAmount']['amount'])
+            else:
+                amount = float(tx.amount)
+        except (KeyError, AttributeError):
+            print(f"Invalid transaction format: {tx}")
+            raise ValueError("Invalid transaction format - missing amount field")
+
+        # Extract temporal features
+        try:
+            if isinstance(tx, dict):
+                booking_date = pd.to_datetime(tx['bookingDateTime'], dayfirst=True)  # Add dayfirst=True
+            else:
+                booking_date = pd.to_datetime(tx.booking_date_time)
+        except (KeyError, AttributeError):
+            print(f"Invalid transaction format: {tx}")
+            raise ValueError("Invalid transaction format - missing booking date field")
+
+        day_of_month = booking_date.day / 31.0
+        day_of_week = booking_date.dayofweek / 6.0
+        
+        # Create condition vector for category
+        try:
+            if isinstance(tx, dict):
+                category = tx['category']
+            else:
+                category = tx.category
+        except (KeyError, AttributeError):
+            print(f"Invalid transaction format: {tx}")
+            raise ValueError("Invalid transaction format - missing category field")
+
+        category_vector = np.zeros(len(self.category_columns))
+        try:
+            if category.startswith('category_'):
+                category_name = category
+            else:
+                category_name = f"category_{category}"
+            category_idx = list(self.category_columns).index(category_name)
+            category_vector[category_idx] = 1
+        except ValueError:
+            # If category not found, use a random category
+            category_vector[random.randrange(len(self.category_columns))] = 1
+        
+        # Combine features
+        features = np.array([amount, day_of_month, day_of_week])
+        
+        # Normalize numerical features
+        if not hasattr(self, '_feature_scaler'):
+            self._feature_scaler = MinMaxScaler()
+            self._feature_scaler.fit(np.array([[0, 0, 0], [10000, 1, 1]]))
+        features = self._feature_scaler.transform(features.reshape(1, -1))[0]
+        
+        # Create tensors on CPU first
+        input_tensor = torch.FloatTensor(features[:2])  # Only amount and day_of_month
+        condition_tensor = torch.FloatTensor(category_vector)  # Shape: [n_categories]
+        
+        # Move tensors to the correct device
+        input_tensor = input_tensor.to(self.device)
+        condition_tensor = condition_tensor.to(self.device)
+        
+        # Synchronize if using MPS device
+        if self.device.type == 'mps':
+            torch.mps.synchronize()
+        
+        return input_tensor, condition_tensor 

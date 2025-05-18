@@ -1,18 +1,22 @@
-import { useState, useMemo } from 'react';
-import { Transaction } from "@/types";
+import { useState, useMemo, useEffect } from "react";
+import { Transaction, BatchExplanationData } from "@/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BatchAnalytics } from "./BatchAnalytics";
 import { TransactionList } from "./TransactionList";
 import { Button } from "@/components/ui/button";
-import { Download, Settings } from "lucide-react";
+import { Download, Settings, Info } from "lucide-react";
 import { DistributionEditor } from "./DistributionEditor";
+import axios from "axios";
+import { useToast } from "@/components/ui/use-toast";
+import { BatchExplanation } from "./BatchExplanation";
+import { Skeleton } from "./ui/skeleton";
 
 interface BatchViewProps {
   transactions: Transaction[];
   batchName: string;
   createdAt: string;
   months: number;
-  onExport: (format: 'json' | 'csv' | 'excel') => void;
+  onExport: (format: "json" | "csv" | "excel") => void;
   onTransactionUpdated?: () => void;
   personaId: number;
   personaName: string;
@@ -20,19 +24,47 @@ interface BatchViewProps {
   token: string;
 }
 
-export function BatchView({ 
-  transactions, 
-  batchName, 
-  createdAt, 
-  months, 
+export function BatchView({
+  transactions,
   onExport,
   onTransactionUpdated,
   personaId,
   personaName,
   batchId,
-  token
+  token,
 }: BatchViewProps) {
+  const { toast } = useToast();
   const [showDistributionEditor, setShowDistributionEditor] = useState(false);
+  const [batchExplanation, setBatchExplanation] =
+    useState<BatchExplanationData | null>(null);
+  const [loadingExplanation, setLoadingExplanation] = useState(false);
+
+  const fetchBatchExplanation = async () => {
+    setLoadingExplanation(true);
+    try {
+      const response = await axios.get(
+        `http://localhost:8000/batches/${batchId}/explanation`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      setBatchExplanation(response.data);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load batch explanation",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingExplanation(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchBatchExplanation();
+  }, [batchId]);
 
   // Calculate current distribution from transactions
   const currentDistribution = useMemo(() => {
@@ -55,24 +87,24 @@ export function BatchView({
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div className="flex gap-2">
-          <Button 
-            onClick={() => onExport('json')} 
+          <Button
+            onClick={() => onExport("json")}
             variant="outline"
             className="bg-white text-[#261436] border-[#261436] hover:bg-[#F1E6EA]"
           >
             <Download className="mr-2 h-4 w-4" />
             Download as JSON
           </Button>
-          <Button 
-            onClick={() => onExport('csv')} 
+          <Button
+            onClick={() => onExport("csv")}
             variant="outline"
             className="bg-white text-[#261436] border-[#261436] hover:bg-[#F1E6EA]"
           >
             <Download className="mr-2 h-4 w-4" />
             Download as CSV
           </Button>
-          <Button 
-            onClick={() => onExport('excel')} 
+          <Button
+            onClick={() => onExport("excel")}
             variant="outline"
             className="bg-white text-[#261436] border-[#261436] hover:bg-[#F1E6EA]"
           >
@@ -80,29 +112,37 @@ export function BatchView({
             Download as Excel
           </Button>
         </div>
-        <Button
-          onClick={() => setShowDistributionEditor(true)}
-          variant="outline"
-          className="bg-white text-[#261436] border-[#261436] hover:bg-[#F1E6EA]"
-        >
-          <Settings className="mr-2 h-4 w-4" />
-          Edit Distribution
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={() => setShowDistributionEditor(true)}
+            variant="outline"
+            className="bg-white text-[#261436] border-[#261436] hover:bg-[#F1E6EA]"
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            Edit Distribution
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="transactions" className="w-full">
         <TabsList className="bg-[#F1E6EA] mb-4">
-          <TabsTrigger 
-            value="transactions" 
+          <TabsTrigger
+            value="transactions"
             className="data-[state=active]:bg-[#261436] data-[state=active]:text-white data-[state=inactive]:text-[#261436]"
           >
             Transactions
           </TabsTrigger>
-          <TabsTrigger 
-            value="analytics" 
+          <TabsTrigger
+            value="analytics"
             className="data-[state=active]:bg-[#261436] data-[state=active]:text-white data-[state=inactive]:text-[#261436]"
           >
             Analytics
+          </TabsTrigger>
+          <TabsTrigger
+            value="batchanalysis"
+            className="data-[state=active]:bg-[#261436] data-[state=active]:text-white data-[state=inactive]:text-[#261436]"
+          >
+            Batch Analysis
           </TabsTrigger>
         </TabsList>
         <TabsContent value="transactions" className="mt-0">
@@ -112,10 +152,65 @@ export function BatchView({
             token={token}
           />
         </TabsContent>
-        <TabsContent value="analytics" className="mt-4 bg-white rounded-md p-4 text-[#261436]">
-          <BatchAnalytics 
-            transactions={transactions}
-          />
+        <TabsContent
+          value="analytics"
+          className="mt-4 bg-white rounded-md p-4 text-[#261436]"
+        >
+          <BatchAnalytics transactions={transactions} />
+        </TabsContent>
+        <TabsContent
+          value="batchanalysis"
+          className="mt-4 bg-white rounded-md p-4 text-[#261436]"
+        >
+          {loadingExplanation ? (
+            <div className="space-y-4">
+              <Skeleton className="h-8 w-3/4" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ) : batchExplanation ? (
+            <BatchExplanation {...batchExplanation} token={token} />
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground mb-4">No analysis data available</p>
+              <Button 
+                onClick={async () => {
+                  setLoadingExplanation(true);
+                  try {
+                    await axios.post(
+                      `http://localhost:8000/batches/${batchId}/generate-explanation`,
+                      {},
+                      {
+                        headers: {
+                          Authorization: `Bearer ${token}`,
+                        },
+                      }
+                    );
+                    // Refresh the explanation data
+                    const response = await axios.get(
+                      `http://localhost:8000/batches/${batchId}/explanation`,
+                      {
+                        headers: {
+                          Authorization: `Bearer ${token}`,
+                        },
+                      }
+                    );
+                    setBatchExplanation(response.data);
+                  } catch (error) {
+                    toast({
+                      title: "Error",
+                      description: "Failed to generate explanation. Please try again.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setLoadingExplanation(false);
+                  }
+                }}
+              >
+                Generate Analysis
+              </Button>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -135,4 +230,4 @@ export function BatchView({
       )}
     </div>
   );
-} 
+}

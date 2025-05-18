@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2, Loader2 } from "lucide-react";
+import { Plus, Trash2, Loader2, Info } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,9 +10,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/use-toast";
-import axios, { AxiosError } from "axios";
+import axios from "axios";
+import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface DistributionEditorProps {
   personaId: number;
@@ -69,6 +75,7 @@ export function DistributionEditor({
   const [saveForTraining, setSaveForTraining] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [regenerateBatch, setRegenerateBatch] = useState(!!batchId);
+  const [useForTraining, setUseForTraining] = useState(true);
 
   const total = Object.values(distribution).reduce((sum, val) => sum + val, 0);
   const isValid = Math.abs(total - 1) < 0.01; // Allow small rounding errors
@@ -133,11 +140,11 @@ export function DistributionEditor({
     setDisplayValues(newDisplayValues);
   };
 
-  const handleSubmit = async () => {
-    if (!isValid) {
+  const handleSave = async () => {
+    if (!isExactly100) {
       toast({
         title: "Error",
-        description: "Distribution percentages must sum to 100%",
+        description: "Total percentage must equal 100%",
         variant: "destructive",
       });
       return;
@@ -145,104 +152,30 @@ export function DistributionEditor({
 
     setIsSubmitting(true);
     try {
-      // Convert display values (percentages) back to decimals and validate
-      const cleanDistribution = Object.entries(displayValues).reduce(
-        (acc, [key, value]) => {
-          // Parse the percentage and convert to decimal, ensuring it's a number
-          const decimal = Number((parseFloat(value) / 100).toFixed(4));
-          if (isNaN(decimal)) {
-            throw new Error(`Invalid number for category ${key}: ${value}`);
-          }
-          // Ensure it's stored as a number, not a string
-          acc[key] = decimal;
-          return acc;
+      await axios.patch(
+        `http://localhost:8000/personas/${personaId}/distribution`,
+        {
+          distribution,
+          batchId,
+          useForTraining,
         },
-        {} as Record<string, number>
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
 
-      if (isNewPersona) {
-        // Create new persona with distribution
-        const response = await axios.post(
-          `http://localhost:8000/personas`,
-          {
-            name: personaName,
-            distribution: cleanDistribution,
-            save_for_training: saveForTraining,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+      toast({
+        title: "Success",
+        description: "Distribution updated successfully",
+      });
 
-        // Generate initial transactions for the new persona
-        const generateResponse = await axios.get(
-          `http://localhost:8000/generate/${response.data.id}`,
-          {
-            params: {
-              batch_name: `${personaName} - Initial Batch`,
-              months: 3, // Default to 3 months of data
-            },
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
-
-        toast({
-          title: "Success",
-          description: "New persona created with initial transactions",
-        });
-
-        // Redirect to the batch page
-        window.location.href = `/batch/${generateResponse.data.batch_id}`;
-      } else {
-        // Update existing persona distribution
-        const response = await axios.patch(
-          `http://localhost:8000/personas/${personaId}/distribution`,
-          cleanDistribution,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            params: {
-              save_for_training: saveForTraining,
-              batch_id: regenerateBatch ? batchId : undefined,
-            },
-          }
-        );
-
-        if (regenerateBatch && batchId && !response.data.batch_regenerated) {
-          throw new Error("Batch was not regenerated");
-        }
-
-        toast({
-          title: "Success",
-          description:
-            regenerateBatch && batchId
-              ? "Distribution updated and batch regenerated successfully"
-              : "Distribution updated successfully",
-        });
-      }
-
-      if (onDistributionUpdated) {
-        onDistributionUpdated();
-      }
-
-      onClose();
+      onDistributionUpdated?.();
     } catch (error) {
-      console.error("Error updating distribution:", error);
-      const axiosError = error as AxiosError<ApiError>;
-      const errorMessage =
-        axiosError.response?.data?.detail ||
-        (error instanceof Error
-          ? error.message
-          : "Failed to update distribution");
-
       toast({
         title: "Error",
-        description: errorMessage,
+        description: "Failed to update distribution",
         variant: "destructive",
       });
     } finally {
@@ -331,22 +264,39 @@ export function DistributionEditor({
             </span>
           </div>
 
-          {/* Options
-          <div className="flex flex-col gap-4 pt-4 border-t">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="save-training"
-                checked={saveForTraining}
-                onCheckedChange={(checked) => setSaveForTraining(checked as boolean)}
-              />
-              <label
-                htmlFor="save-training"
-                className="text-sm font-medium leading-none text-[#261436] peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-              >
-                Save this distribution for training
-              </label>
-            </div>
-          </div> */}
+          {/* Add training checkbox */}
+          <div className="flex items-center gap-2 pt-4">
+            <input
+              type="checkbox"
+              id="useForTraining"
+              checked={useForTraining}
+              onChange={(e) => setUseForTraining(e.target.checked)}
+              className="h-4 w-4 rounded border-[#261436]/20 text-[#261436] focus:ring-[#261436]"
+            />
+            <Label
+              htmlFor="useForTraining"
+              className="text-sm font-medium text-[#261436] cursor-pointer flex items-center gap-2"
+            >
+              Use this distribution update to improve future transaction
+              generations
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="h-4 w-4 text-[#261436]/70" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">
+                      When enabled, this distribution update will be used to
+                      train the model, helping it generate more accurate
+                      transactions in future batches. The model will learn your
+                      preferred category distributions and apply them to new
+                      transaction sets.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </Label>
+          </div>
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
@@ -358,7 +308,7 @@ export function DistributionEditor({
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit}
+            onClick={handleSave}
             disabled={!isValid || isSubmitting}
             className="bg-[#261436] text-white"
           >
@@ -374,7 +324,8 @@ export function DistributionEditor({
         <DialogHeader>
           <DialogTitle>Edit Distribution for {personaName}</DialogTitle>
           <DialogDescription>
-            Adjust category percentages to modify transaction patterns. Total must equal 100%.
+            Adjust category percentages to modify transaction patterns. Total
+            must equal 100%.
           </DialogDescription>
         </DialogHeader>
 
@@ -416,6 +367,40 @@ export function DistributionEditor({
               {totalPercentage}%
             </span>
           </div>
+
+          {/* Add training checkbox */}
+          <div className="flex items-center gap-2 pt-4">
+            <input
+              type="checkbox"
+              id="useForTraining"
+              checked={useForTraining}
+              onChange={(e) => setUseForTraining(e.target.checked)}
+              className="h-4 w-4 rounded border-[#261436]/20 text-[#261436] focus:ring-[#261436]"
+            />
+            <Label
+              htmlFor="useForTraining"
+              className="text-sm font-medium text-[#261436] cursor-pointer flex items-center gap-2"
+            >
+              Use this distribution update to improve future transaction
+              generations
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="h-4 w-4 text-[#261436]/70" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">
+                      When enabled, this distribution update will be used to
+                      train the model, helping it generate more accurate
+                      transactions in future batches. The model will learn your
+                      preferred category distributions and apply them to new
+                      transaction sets.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </Label>
+          </div>
         </div>
 
         <DialogFooter>
@@ -427,7 +412,7 @@ export function DistributionEditor({
             Cancel
           </Button>
           <Button
-            onClick={handleSubmit}
+            onClick={handleSave}
             disabled={!isValid || isSubmitting}
             className="bg-[#261436] text-white"
           >
