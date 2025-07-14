@@ -101,6 +101,8 @@ export function BatchList({
     }
   };
 
+  const API_BASE_URL = "http://localhost:8000";
+
   const handleDelete = async (e: React.MouseEvent, batchId: number) => {
     e.stopPropagation();
 
@@ -113,7 +115,7 @@ export function BatchList({
     setIsDeleting(batchId);
 
     try {
-      const response = await fetch(`/api/batches/${batchId}`, {
+      const response = await fetch(`${API_BASE_URL}/batches/${batchId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,

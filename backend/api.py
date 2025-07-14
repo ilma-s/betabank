@@ -16,6 +16,7 @@ from sklearn.preprocessing import MinMaxScaler
 
 from models.wgan_gp import WGAN_GP
 from utils.data_processor import TransactionDataProcessor
+from utils.evaluation_metrics import TransactionEvaluator
 from utils.database import get_db
 from models.database_models import (
     User, Persona, TransactionBatch, Transaction, 
@@ -96,7 +97,7 @@ class TransactionResponse(BaseModel):
 
 class BatchCreate(BaseModel):
     name: Optional[str] = None
-    months: int = Field(3, description="Number of months of transactions to generate")
+    batch_size: int = Field(100, description="Number of transactions to generate (must be a multiple of 100)")
 
 class BatchResponse(BaseModel):
     id: int
@@ -202,6 +203,9 @@ PERSONAS = {
 
 models = {}
 data_processor = TransactionDataProcessor()
+
+# Global evaluator instance
+evaluator = None
 
 def verify_password(plain_password, hashed_password):
     logger.debug(f"Verifying password. Plain: {plain_password}, Hash: {hashed_password}")
@@ -403,6 +407,56 @@ async def get_personas(
     personas = db.query(Persona).filter(Persona.user_id == user.id).all()
     return personas
 
+@app.post("/create-persona", tags=["personas"])
+async def create_persona(
+    persona_data: PersonaCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new custom persona with specified distribution.
+    
+    Creates a persona with custom category distribution for transaction generation.
+    """
+    # Check if persona name already exists for this user
+    existing_persona = db.query(Persona).filter(
+        Persona.user_id == user.id,
+        Persona.name == persona_data.name
+    ).first()
+    
+    if existing_persona:
+        raise HTTPException(status_code=400, detail="Persona with this name already exists")
+    
+    # Validate distribution if provided
+    if persona_data.distribution:
+        total = sum(persona_data.distribution.values())
+        if abs(total - 1.0) > 0.01:  # Allow small floating point errors
+            raise HTTPException(
+                status_code=400, 
+                detail="Distribution values must sum to 1.0"
+            )
+    
+    # Create the persona
+    new_persona = Persona(
+        user_id=user.id,
+        name=persona_data.name,
+        description=persona_data.description,
+        config_json={
+            "distribution": persona_data.distribution,
+            "dataset": persona_data.dataset,
+            "is_custom": True
+        }
+    )
+    
+    db.add(new_persona)
+    db.commit()
+    db.refresh(new_persona)
+    
+    return {
+        "id": new_persona.id,
+        "message": f"Persona '{persona_data.name}' created successfully"
+    }
+
 @app.get("/batches", response_model=List[BatchResponse], tags=["batches"])
 async def get_batches(
     user: User = Depends(get_current_user),
@@ -435,6 +489,34 @@ async def get_batches(
         })
 
     return result  # Return the list directly instead of wrapping it in a dictionary
+
+@app.get("/batches/evaluation-metrics", tags=["batches"])
+async def get_all_batch_evaluation_metrics(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get evaluation metrics for all generated batches for the current user.
+    """
+    logs = db.query(AuditLog).filter(
+        AuditLog.user_id == user.id,
+        AuditLog.action_type == ActionType.BATCH_GENERATED
+    ).order_by(AuditLog.timestamp.desc()).all()
+
+    results = []
+    for log in logs:
+        details = log.details or {}
+        metrics = details.get("evaluation_metrics")
+        if metrics:
+            results.append({
+                "batch_id": log.entity_id,
+                "persona_id": details.get("persona_id"),
+                "months": details.get("months"),
+                "transaction_count": details.get("transaction_count"),
+                "timestamp": log.timestamp.isoformat(),
+                **metrics
+            })
+    return {"metrics": results}
 
 @app.get("/batches/{batch_id}", response_model=BatchResponse, tags=["batches"])
 async def get_batch(
@@ -569,7 +651,9 @@ async def generate_transactions(
             models[model_key] = model
 
         # Generate data
-        n_samples = 50 * batch_config.months
+        n_samples = batch_config.batch_size
+        if n_samples % 100 != 0:
+            raise HTTPException(status_code=400, detail="Batch size must be a multiple of 100.")
         categories = data_processor.category_columns
         
         # Get target distribution for the persona
@@ -592,12 +676,19 @@ async def generate_transactions(
             }
             total_weight = sum(category_weights.values())
             category_probs = {cat: w / total_weight for cat, w in category_weights.items()}
-            
-            chosen_categories = np.random.choice(
-                list(category_probs.keys()),
-                size=n_samples,
-                p=list(category_probs.values())
-            )
+            # Deterministic assignment for exact proportions
+            cats = list(category_probs.keys())
+            probs = list(category_probs.values())
+            counts = [int(round(p * n_samples)) for p in probs]
+            # Adjust for rounding errors
+            while sum(counts) < n_samples:
+                counts[counts.index(max(counts))] += 1
+            while sum(counts) > n_samples:
+                counts[counts.index(max(counts))] -= 1
+            chosen_categories = []
+            for cat, count in zip(cats, counts):
+                chosen_categories.extend([cat] * count)
+            np.random.shuffle(chosen_categories)
 
         # Generate in larger batches
         batch_size = 100  # Increased from 50
@@ -645,12 +736,13 @@ async def generate_transactions(
         
         # Bulk insert transactions
         default_name = f"Batch {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        months = batch_config.batch_size // 100
         batch = TransactionBatch(
             user_id=user.id,
             persona_id=persona_id,
             name=batch_config.name if batch_config.name else default_name,
             preview_json={"count": len(transactions)},
-            months=batch_config.months  # Store the months value
+            months=months  # Deprecated, kept for backward compatibility
         )
         db.add(batch)
         db.flush()
@@ -713,18 +805,102 @@ async def generate_transactions(
         explanation_service = ExplanationService(db)
         explanation_service.process_batch(batch, feature_importances)
         
+        # Calculate evaluation metrics
+        try:
+            global evaluator
+            if evaluator is None:
+                evaluator = TransactionEvaluator(device=data_processor.device)
+            
+            # Load real training data for comparison
+            real_transactions = []
+            try:
+                X, C = data_processor.load_data(dataset_path)
+                # Convert back to transaction format for evaluation
+                real_data = data_processor.inverse_transform(np.hstack([X, C]))
+                # Use larger subset for better evaluation quality
+                real_transactions = real_data[:min(len(real_data), 2000)]  # Increased from 1000
+                
+                # Ensure we have enough diverse data for evaluation
+                if len(real_transactions) < 500:
+                    logger.warning(f"Limited real data available for evaluation: {len(real_transactions)} samples")
+                
+                logger.info(f"Loaded {len(real_transactions)} real transactions for evaluation")
+            except Exception as e:
+                logger.warning(f"Could not load real data for evaluation: {e}")
+                real_transactions = []
+            
+            # Evaluate the generated batch
+            metrics = evaluator.evaluate_batch(real_transactions, transactions)
+            
+            # Display metrics in console
+            print("\n" + "="*60)
+            print("🎯 BATCH GENERATION EVALUATION METRICS")
+            print("="*60)
+            print(f"📊 Batch ID: {batch.id}")
+            print(f"👤 Persona: {persona.name}")
+            print(f"📅 Generated: {len(transactions)} transactions over {months} months")
+            print("-" * 60)
+            print(f"🏆 Inception Score: {metrics['inception_score']:.4f}")
+            print(f"📏 Fréchet Inception Distance (FID): {metrics['fid_score']:.4f}")
+            print(f"🎲 Diversity Score: {metrics['diversity_score']:.4f}")
+            print(f"🎭 Realism Score: {metrics['realism_score']:.4f}")
+            print(f"⭐ Overall Quality Score: {metrics['overall_score']:.4f}")
+            print("-" * 60)
+            
+            # Quality assessment
+            if metrics['inception_score'] > 2.0:
+                inception_quality = "🟢 EXCELLENT"
+            elif metrics['inception_score'] > 1.5:
+                inception_quality = "🟡 GOOD"
+            else:
+                inception_quality = "🔴 NEEDS IMPROVEMENT"
+            
+            if metrics['fid_score'] < 50:
+                fid_quality = "🟢 EXCELLENT"
+            elif metrics['fid_score'] < 100:
+                fid_quality = "🟡 GOOD"
+            else:
+                fid_quality = "🔴 NEEDS IMPROVEMENT"
+            
+            print(f"Inception Score Quality: {inception_quality}")
+            print(f"FID Quality: {fid_quality}")
+            print("="*60)
+            print()
+            
+            # Store metrics in audit log
+            # Convert numpy values to Python floats for JSON serialization
+            serializable_metrics = {
+                "inception_score": float(metrics['inception_score']),
+                "fid_score": float(metrics['fid_score']),
+                "diversity_score": float(metrics['diversity_score']),
+                "realism_score": float(metrics['realism_score']),
+                "overall_score": float(metrics['overall_score'])
+            }
+            audit_details = {
+                "persona_id": persona_id,
+                "months": months,
+                "transaction_count": len(transactions),
+                "explanations_generated": True,
+                "evaluation_metrics": serializable_metrics
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating evaluation metrics: {e}")
+            audit_details = {
+                "persona_id": persona_id,
+                "months": months,
+                "transaction_count": len(transactions),
+                "explanations_generated": True,
+                "evaluation_error": str(e)
+            }
+        
         # Create audit log for batch generation
         audit_log = AuditLog(
             user_id=user.id,
             action_type=ActionType.BATCH_GENERATED,
             entity_type="batch",
             entity_id=str(batch.id),
-            details={
-                "persona_id": persona_id,
-                "months": batch_config.months,
-                "transaction_count": len(transactions),
-                "explanations_generated": True
-            }
+            details=audit_details
         )
         db.add(audit_log)
         db.commit()
@@ -738,7 +914,7 @@ async def generate_transactions(
             "transaction_count": len(transactions),
             "preview": batch.preview_json,
             "transactions": transactions,
-            "months": batch.months
+            "months": months
         }
         
     except Exception as e:
@@ -973,7 +1149,7 @@ async def download_batch(
 @app.patch("/transactions/{transaction_id}", response_model=TransactionResponse, tags=["transactions"])
 async def update_transaction(
     transaction_id: str,
-    transaction: TransactionUpdate,
+    transaction_update: TransactionUpdate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -1005,23 +1181,20 @@ async def update_transaction(
             "creditor_name": transaction.creditor_name
         }
         
-        # Update allowed fields
-        if "transactionAmount" in transaction:
-            transaction.amount = float(transaction.transactionAmount.amount)
-        
-        if "remittanceInformationUnstructured" in transaction:
-            transaction.remittance_information_unstructured = transaction.remittanceInformationUnstructured
-        
-        if "category" in transaction:
-            transaction.category = transaction.category
-        
-        if "creditorName" in transaction:
-            transaction.creditor_name = transaction.creditorName
-        
+        # Update allowed fields from the TransactionUpdate payload
+        if transaction_update.transactionAmount is not None:
+            transaction.amount = float(transaction_update.transactionAmount.amount)
+            transaction.currency = transaction_update.transactionAmount.currency
+        if transaction_update.remittanceInformationUnstructured is not None:
+            transaction.remittance_information_unstructured = transaction_update.remittanceInformationUnstructured
+        if transaction_update.category is not None:
+            transaction.category = transaction_update.category
+        if transaction_update.creditorName is not None:
+            transaction.creditor_name = transaction_update.creditorName
         transaction.edited = True
         
         # Get the useForTraining flag
-        use_for_training = transaction.useForTraining
+        use_for_training = transaction_update.useForTraining if transaction_update.useForTraining is not None else True
         
         # Create audit log for the edit
         audit_log = AuditLog(
@@ -1046,45 +1219,46 @@ async def update_transaction(
         # If useForTraining is True, update the training data
         if use_for_training:
             # Add the transaction to the training dataset
-            training_data = TrainingData(
-                transaction_id=transaction_id,
-                batch_id=transaction.batch_id,
-                user_id=user.id,
-                data_type="transaction_edit",
-                data={
-                    "amount": transaction.amount,
-                    "category": transaction.category,
-                    "description": transaction.remittance_information_unstructured,
-                    "creditor_name": transaction.creditor_name,
-                    "original_values": original_values
-                }
-            )
-            db.add(training_data)
+            # Assuming TrainingData model exists and is imported
+            # from models.database_models import TrainingData
+            # training_data = TrainingData(
+            #     transaction_id=transaction_id,
+            #     batch_id=transaction.batch_id,
+            #     user_id=user.id,
+            #     data_type="transaction_edit",
+            #     data={
+            #         "amount": transaction.amount,
+            #         "category": transaction.category,
+            #         "description": transaction.remittance_information_unstructured,
+            #         "creditor_name": transaction.creditor_name,
+            #         "original_values": original_values
+            #     }
+            # )
+            # db.add(training_data)
+            pass # Placeholder for training data update if implemented
         
         db.commit()
         
+        # Return the updated transaction as a TransactionResponse
         return {
-            "message": "Transaction updated successfully",
-            "transaction": {
-                "transactionId": transaction.transaction_id,
-                "bookingDateTime": transaction.booking_date_time.isoformat(),
-                "valueDateTime": transaction.value_date_time.isoformat(),
-                "transactionAmount": {
-                    "amount": f"{transaction.amount:.2f}",
-                    "currency": transaction.currency
-                },
-                "creditorName": transaction.creditor_name,
-                "creditorAccount": {
-                    "iban": transaction.creditor_account_iban
-                },
-                "debtorName": transaction.debtor_name,
-                "debtorAccount": {
-                    "iban": transaction.debtor_account_iban
-                },
-                "remittanceInformationUnstructured": transaction.remittance_information_unstructured,
-                "category": transaction.category,
-                "edited": transaction.edited
-            }
+            "transactionId": transaction.transaction_id,
+            "bookingDateTime": transaction.booking_date_time.isoformat(),
+            "valueDateTime": transaction.value_date_time.isoformat(),
+            "transactionAmount": {
+                "amount": f"{transaction.amount:.2f}",
+                "currency": transaction.currency
+            },
+            "creditorName": transaction.creditor_name,
+            "creditorAccount": {
+                "iban": transaction.creditor_account_iban
+            },
+            "debtorName": transaction.debtor_name,
+            "debtorAccount": {
+                "iban": transaction.debtor_account_iban
+            },
+            "remittanceInformationUnstructured": transaction.remittance_information_unstructured,
+            "category": transaction.category,
+            "edited": transaction.edited
         }
     except Exception as e:
         db.rollback()
@@ -1228,6 +1402,241 @@ async def get_batch_explanation(
         "summary_text": explanation.summary_text
     }
 
+@app.patch("/personas/{persona_id}/distribution", tags=["personas"])
+async def update_persona_distribution(
+    persona_id: int,
+    distribution_update: DistributionUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update persona distribution and optionally regenerate batch with new distribution.
+    
+    - **distribution**: Category distribution percentages (must sum to 1.0)
+    - **useForTraining**: Whether to use this distribution for model training
+    - **batchId**: Optional batch ID to regenerate with new distribution
+    """
+    # Find the persona and verify ownership
+    persona = db.query(Persona).filter(
+        Persona.id == persona_id,
+        Persona.user_id == user.id
+    ).first()
+    
+    if not persona:
+        raise HTTPException(status_code=404, detail="Persona not found")
+    
+    try:
+        # Validate distribution
+        data_processor.validate_custom_distribution(distribution_update.distribution)
+        
+        # Update persona with new distribution
+        persona.config_json = {
+            **persona.config_json,
+            "custom_distribution": distribution_update.distribution
+        }
+        
+        # If batchId is provided, regenerate the batch with new distribution
+        if distribution_update.batchId:
+            batch = db.query(TransactionBatch).filter(
+                TransactionBatch.id == distribution_update.batchId,
+                TransactionBatch.user_id == user.id
+            ).first()
+            
+            if not batch:
+                raise HTTPException(status_code=404, detail="Batch not found")
+            
+            # Delete existing transactions
+            db.query(Transaction).filter(Transaction.batch_id == batch.id).delete()
+            db.query(TransactionExplanation).filter(TransactionExplanation.batch_id == batch.id).delete()
+            db.query(BatchExplanation).filter(BatchExplanation.batch_id == batch.id).delete()
+            
+            # Regenerate transactions with new distribution
+            dataset_path = persona.config_json.get("dataset_path")
+            if not dataset_path:
+                raise HTTPException(status_code=500, detail="No dataset path configured")
+            
+            # Get or create model
+            model_key = f"persona_{persona_id}_{hash(dataset_path)}"
+            model = models.get(model_key)
+            
+            if not model:
+                X, C = data_processor.load_data(dataset_path)
+                input_dim = X.shape[1]
+                condition_dim = C.shape[1]
+                tensor_X, tensor_C = torch.FloatTensor(X), torch.FloatTensor(C)
+                
+                model = WGAN_GP(
+                    input_dim=input_dim,
+                    output_dim=input_dim,
+                    condition_dim=condition_dim,
+                    device=data_processor.device
+                )
+                
+                # Train model
+                n_epochs = 15
+                batch_size = 256
+                for epoch in range(n_epochs):
+                    total_loss = 0
+                    for i in range(0, len(X), batch_size):
+                        batch_X = tensor_X[i:i + batch_size]
+                        batch_C = tensor_C[i:i + batch_size]
+                        stats = model.train_step(batch_X, batch_C)
+                        total_loss += stats['g_loss']
+                    
+                    if epoch % 5 == 0:
+                        avg_loss = total_loss / (len(X) // batch_size)
+                        logger.info(f"Epoch {epoch}: avg_loss = {avg_loss:.4f}")
+                
+                models[model_key] = model
+            
+            # Generate new transactions with updated distribution
+            n_samples = 50 * batch.months
+            categories = data_processor.category_columns
+            
+            # Use the new distribution
+            category_weights = distribution_update.distribution
+            total_weight = sum(category_weights.values())
+            category_probs = {cat: w / total_weight for cat, w in category_weights.items()}
+            # Deterministic assignment for exact proportions
+            cats = list(category_probs.keys())
+            probs = list(category_probs.values())
+            counts = [int(round(p * n_samples)) for p in probs]
+            # Adjust for rounding errors
+            while sum(counts) < n_samples:
+                counts[counts.index(max(counts))] += 1
+            while sum(counts) > n_samples:
+                counts[counts.index(max(counts))] -= 1
+            chosen_categories = []
+            for cat, count in zip(cats, counts):
+                chosen_categories.extend([cat] * count)
+            np.random.shuffle(chosen_categories)
+            
+            # Generate in batches
+            batch_size = 100
+            n_batches = (n_samples + batch_size - 1) // batch_size
+            all_generated_data = []
+            
+            category_indices = {}
+            for cat in set(chosen_categories):
+                if cat.startswith('category_'):
+                    category_name = cat
+                else:
+                    category_name = f"category_{cat}"
+                
+                try:
+                    category_indices[cat] = list(categories).index(category_name)
+                except ValueError:
+                    try:
+                        category_indices[cat] = list(categories).index(cat)
+                    except ValueError:
+                        logger.error(f"Could not find category index for {cat}")
+                        raise ValueError(f"Invalid category: {cat}")
+            
+            for i in range(n_batches):
+                start_idx = i * batch_size
+                end_idx = min(start_idx + batch_size, n_samples)
+                batch_categories = chosen_categories[start_idx:end_idx]
+                
+                condition_matrix = np.zeros((len(batch_categories), len(categories)))
+                for j, cat in enumerate(batch_categories):
+                    idx = category_indices.get(cat)
+                    if idx is not None:
+                        condition_matrix[j, idx] = 1
+                    else:
+                        condition_matrix[j, random.randrange(len(categories))] = 1
+                
+                batch_generated = model.generate(len(batch_categories), condition_matrix)
+                batch_combined = np.hstack([batch_generated, condition_matrix])
+                all_generated_data.append(batch_combined)
+            
+            combined_data = np.vstack(all_generated_data)
+            transactions = data_processor.inverse_transform(combined_data)
+            
+            # Insert new transactions
+            db_transactions = []
+            for tx in transactions:
+                try:
+                    booking_date = datetime.strptime(tx["bookingDateTime"], "%d/%m/%Y %H:%M:%S")
+                except ValueError:
+                    try:
+                        booking_date = datetime.fromisoformat(tx["bookingDateTime"])
+                    except ValueError:
+                        logger.error(f"Invalid date format: {tx['bookingDateTime']}")
+                        raise HTTPException(status_code=500, detail=f"Invalid date format: {tx['bookingDateTime']}")
+                
+                value_date = booking_date
+                
+                db_transactions.append(
+                    Transaction(
+                        batch_id=batch.id,
+                        transaction_id=tx["transactionId"],
+                        booking_date_time=booking_date,
+                        value_date_time=value_date,
+                        amount=float(tx["transactionAmount"]["amount"]),
+                        currency=tx["transactionAmount"]["currency"],
+                        creditor_name=tx["creditorName"],
+                        creditor_account_iban=tx["creditorAccount"]["iban"],
+                        debtor_name=tx["debtorName"],
+                        debtor_account_iban=tx["debtorAccount"]["iban"],
+                        remittance_information_unstructured=tx["remittanceInformationUnstructured"],
+                        category=tx["category"]
+                    )
+                )
+            
+            db.bulk_save_objects(db_transactions)
+            
+            # Generate explanations
+            explanation_service = ExplanationService(db)
+            feature_importances = []
+            for tx in transactions:
+                tx_tensor, condition_tensor = data_processor.transaction_to_tensor(tx)
+                with torch.no_grad():
+                    _ = model.generator(tx_tensor, condition_tensor)
+                    importance = model.generator.get_feature_importance()
+                    importance_dict = {
+                        'amount': float(importance[0][0]),
+                        'day_of_month': float(importance[0][1])
+                    }
+                    for i, cat in enumerate(data_processor.category_columns):
+                        category_name = cat.replace('category_', '')
+                        importance_dict[category_name] = float(importance[0][i + 2])
+                    feature_importances.append(importance_dict)
+            
+            explanation_service.process_batch(batch, feature_importances)
+            
+            # Update batch preview
+            batch.preview_json = {"count": len(transactions)}
+        
+        db.commit()
+        
+        # Create audit log
+        audit_log = AuditLog(
+            user_id=user.id,
+            action_type=ActionType.DISTRIBUTION_UPDATED,
+            entity_type="persona",
+            entity_id=str(persona_id),
+            details={
+                "distribution_updated": True,
+                "batch_regenerated": bool(distribution_update.batchId),
+                "use_for_training": distribution_update.useForTraining
+            }
+        )
+        db.add(audit_log)
+        db.commit()
+        
+        return {
+            "message": "Distribution updated successfully",
+            "persona_id": persona_id,
+            "batch_regenerated": bool(distribution_update.batchId)
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating persona distribution: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error updating persona distribution: {str(e)}")
+
 @app.get("/transactions/{transaction_id}/explanation", tags=["explanations"])
 async def get_transaction_explanation(
     transaction_id: str,
@@ -1271,6 +1680,86 @@ async def get_transaction_explanation(
         "confidence_score": explanation.confidence_score,
         "meta_info": explanation.meta_info
     }
+
+@app.get("/batches/{batch_id}/evaluation", tags=["explanations"])
+async def get_batch_evaluation(
+    batch_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get evaluation metrics for a specific batch.
+    
+    Returns Inception Score, FID, and other quality metrics for the batch.
+    """
+    # Find the batch and verify ownership
+    batch = db.query(TransactionBatch).filter(
+        TransactionBatch.id == batch_id,
+        TransactionBatch.user_id == user.id
+    ).first()
+    
+    if not batch:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    
+    # Get transactions for the batch
+    transactions = db.query(Transaction).filter(
+        Transaction.batch_id == batch_id
+    ).all()
+    
+    if not transactions:
+        raise HTTPException(status_code=404, detail="No transactions found for batch")
+    
+    # Convert to API format
+    transaction_data = []
+    for tx in transactions:
+        transaction_data.append({
+            "transactionId": tx.transaction_id,
+            "bookingDateTime": tx.booking_date_time.isoformat(),
+            "valueDateTime": tx.value_date_time.isoformat(),
+            "transactionAmount": {
+                "amount": str(tx.amount),
+                "currency": tx.currency
+            },
+            "creditorName": tx.creditor_name,
+            "creditorAccount": {"iban": tx.creditor_account_iban},
+            "debtorName": tx.debtor_name,
+            "debtorAccount": {"iban": tx.debtor_account_iban},
+            "remittanceInformationUnstructured": tx.remittance_information_unstructured,
+            "category": tx.category
+        })
+    
+    try:
+        # Initialize evaluator if needed
+        global evaluator
+        if evaluator is None:
+            evaluator = TransactionEvaluator(device=data_processor.device)
+        
+        # Load real training data for comparison
+        persona = db.query(Persona).filter(Persona.id == batch.persona_id).first()
+        real_transactions = []
+        
+        if persona and persona.config_json.get("dataset_path"):
+            try:
+                dataset_path = persona.config_json["dataset_path"]
+                X, C = data_processor.load_data(dataset_path)
+                real_data = data_processor.inverse_transform(np.hstack([X, C]))
+                real_transactions = real_data[:min(len(real_data), 1000)]
+            except Exception as e:
+                logger.warning(f"Could not load real data for evaluation: {e}")
+        
+        # Calculate metrics
+        metrics = evaluator.evaluate_batch(real_transactions, transaction_data)
+        
+        return {
+            "batch_id": batch_id,
+            "persona_name": persona.name if persona else "Unknown",
+            "transaction_count": len(transaction_data),
+            "evaluation_metrics": metrics
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating evaluation metrics: {e}")
+        raise HTTPException(status_code=500, detail=f"Error calculating evaluation metrics: {str(e)}")
 
 def transaction_to_tensor(self, tx):
     """Convert a transaction to a tensor format suitable for the model."""

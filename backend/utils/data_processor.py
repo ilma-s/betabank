@@ -7,10 +7,17 @@ from collections import defaultdict
 from scipy.stats import entropy
 from collections import Counter
 import random
-import boto3
 import os
 from urllib.parse import urlparse
 import torch
+
+# Optional AWS import
+try:
+    import boto3
+    AWS_AVAILABLE = True
+except ImportError:
+    AWS_AVAILABLE = False
+    print("boto3 not available - AWS functionality disabled")
 
 class TransactionDataProcessor:
     def __init__(self):
@@ -60,28 +67,9 @@ class TransactionDataProcessor:
         self.previous_batch = None
         self.VARIETY_THRESHOLD = 0.5
         
-        # Initialize S3 client if credentials are available
+        # Remove AWS/S3 functionality: always use local mode
         self.s3_client = None
-        required_vars = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']
-        
-        # Debug: Print environment variables status
-        print("Checking AWS credentials:")
-        for var in required_vars:
-            print(f"{var} present: {var in os.environ}")
-        
-        if all(k in os.environ for k in required_vars):
-            try:
-                self.s3_client = boto3.client(
-                    's3',
-                    aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
-                    aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
-                    region_name=os.environ.get('AWS_REGION', 'eu-west-2')
-                )
-                print("Successfully initialized S3 client")
-            except Exception as e:
-                print(f"Error initializing S3 client: {str(e)}")
-        else:
-            print("Missing required AWS credentials in environment variables")
+        print("AWS/S3 functionality disabled - running in local mode only")
 
     def validate_temporal_patterns(self, data):
         """Validate temporal patterns in the data (salary and subscriptions/utilities payments)"""
@@ -181,30 +169,19 @@ class TransactionDataProcessor:
         return balanced
     
     def load_data(self, filepath):
-        """Load data from either local file or S3"""
-        # Parse the filepath to check if it's an S3 URL
-        if filepath.startswith('s3://'):
-            if not self.s3_client:
-                raise ValueError("AWS credentials not found in environment variables")
-            
-            # Parse S3 URL
-            parsed = urlparse(filepath)
-            bucket = parsed.netloc
-            key = parsed.path.lstrip('/')
-            
-            try:
-                # Get object from S3
-                response = self.s3_client.get_object(Bucket=bucket, Key=key)
-                data = json.loads(response['Body'].read().decode('utf-8'))
-            except Exception as e:
-                raise Exception(f"Error loading data from S3: {str(e)}")
+        """Load data from local file only. If the path starts with 's3://synthetic-personas-training-datasets/testing_datasets/', map it to the local directory 'training-datasets/testing-datasets/'."""
+        # Map S3 training dataset paths to local directory
+        s3_prefix = 's3://synthetic-personas-training-datasets/testing_datasets/'
+        local_prefix = 'training-datasets/testing-datasets/'
+        if filepath.startswith(s3_prefix):
+            local_path = filepath.replace(s3_prefix, local_prefix)
         else:
-            # Load from local file
-            try:
-                with open(filepath, 'r') as f:
-                    data = json.load(f)
-            except Exception as e:
-                raise Exception(f"Error loading local file: {str(e)}")
+            local_path = filepath
+        try:
+            with open(local_path, 'r') as f:
+                data = json.load(f)
+        except Exception as e:
+            raise Exception(f"Error loading local file: {str(e)}")
 
         data = self.balance_categories(data)
         self.learn_patterns(data)
@@ -340,8 +317,8 @@ class TransactionDataProcessor:
                     # Create subscription transaction with fixed amount
                     transaction = {
                         "transactionId": generate_unique_transaction_id(),
-                        "bookingDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
-                        "valueDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
+                        "bookingDateTime": booking_date.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "valueDateTime": booking_date.strftime("%Y-%m-%dT%H:%M:%S"),
                         "transactionAmount": {
                             "amount": f"{-self.subscription_merchants[merchant]:.2f}",
                             "currency": "EUR"
@@ -378,8 +355,8 @@ class TransactionDataProcessor:
                     # Create utility transaction with fixed amount
                     transaction = {
                         "transactionId": generate_unique_transaction_id(),
-                        "bookingDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
-                        "valueDateTime": booking_date.strftime("%d/%m/%Y %H:%M:%S"),
+                        "bookingDateTime": booking_date.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "valueDateTime": booking_date.strftime("%Y-%m-%dT%H:%M:%S"),
                         "transactionAmount": {
                             "amount": f"{-self.utility_merchants[merchant]:.2f}",
                             "currency": "EUR"
@@ -404,7 +381,7 @@ class TransactionDataProcessor:
             amount_str = f"{amount:.2f}"
             
             # Format date in dd/mm/yyyy format
-            formatted_date = booking_date.strftime("%d/%m/%Y %H:%M:%S")
+            formatted_date = booking_date.strftime("%Y-%m-%dT%H:%M:%S")
             
             transaction = {
                 "transactionId": generate_unique_transaction_id(),
@@ -438,7 +415,7 @@ class TransactionDataProcessor:
                 
                 # Format salary date in dd/mm/yyyy format
                 salary_date = chosen_salary[2].replace(day=1)  # Always on the 1st
-                formatted_salary_date = salary_date.strftime("%d/%m/%Y %H:%M:%S")
+                formatted_salary_date = salary_date.strftime("%Y-%m-%dT%H:%M:%S")
                 
                 # Create the salary transaction
                 transaction = {
@@ -463,7 +440,7 @@ class TransactionDataProcessor:
                 temp_transactions.append(transaction)
         
         # Sort all transactions by date
-        transactions = sorted(temp_transactions, key=lambda x: datetime.strptime(x['bookingDateTime'], "%d/%m/%Y %H:%M:%S"))
+        transactions = sorted(temp_transactions, key=lambda x: datetime.strptime(x['bookingDateTime'], "%Y-%m-%dT%H:%M:%S"))
         return transactions
 
     def calculate_batch_features(self, transactions):
@@ -607,34 +584,23 @@ class TransactionDataProcessor:
 
     def upload_dataset_to_s3(self, data: dict, username: str, dataset_name: str) -> str:
         """
-        Upload a dataset to S3 in the user_datasets directory.
-        Returns the S3 URL of the uploaded dataset.
+        Save a dataset locally in the user_datasets directory (no S3).
+        Returns the local path of the saved dataset.
         """
-        if not self.s3_client:
-            raise ValueError("AWS credentials not found in environment variables")
-
-        # Validate the dataset structure
-        required_fields = ['transactionAmount', 'bookingDateTime', 'category']
-        for transaction in data:
-            if not all(field in transaction for field in required_fields):
-                raise ValueError("Invalid dataset structure. Missing required fields.")
-
-        # Create a safe filename from the dataset name
+        print("AWS/S3 functionality disabled - saving dataset locally")
         safe_filename = "".join(c for c in dataset_name if c.isalnum() or c in ('-', '_')).lower()
-        key = f"user_datasets/{username}/{safe_filename}.json"
-        bucket = "synthetic-personas-training-datasets"
-
+        local_path = f"local_datasets/{username}_{safe_filename}.json"
+        
+        # Create directory if it doesn't exist
+        os.makedirs("local_datasets", exist_ok=True)
+        
         try:
-            # Upload to S3
-            self.s3_client.put_object(
-                Bucket=bucket,
-                Key=key,
-                Body=json.dumps(data),
-                ContentType='application/json'
-            )
-            return f"s3://{bucket}/{key}"
+            with open(local_path, 'w') as f:
+                json.dump(data, f, indent=2)
+            print(f"Dataset saved locally to: {local_path}")
+            return local_path
         except Exception as e:
-            raise Exception(f"Error uploading to S3: {str(e)}")
+            raise Exception(f"Error saving dataset locally: {str(e)}")
 
     def validate_custom_distribution(self, distribution: dict) -> bool:
         """

@@ -69,6 +69,7 @@ export function DistributionEditor({
   const [newCategory, setNewCategory] = useState("");
   const [newPercentage, setNewPercentage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
   const [useForTraining, setUseForTraining] = useState(true);
 
   const total = Object.values(distribution).reduce((sum, val) => sum + val, 0);
@@ -144,8 +145,12 @@ export function DistributionEditor({
     }
 
     setIsSubmitting(true);
+    if (batchId) {
+      setIsRegenerating(true);
+    }
+    
     try {
-      await axios.patch(
+      const response = await axios.patch(
         `http://localhost:8000/personas/${personaId}/distribution`,
         {
           distribution,
@@ -159,9 +164,13 @@ export function DistributionEditor({
         }
       );
 
+      const message = response.data.batch_regenerated 
+        ? "Distribution updated and transactions regenerated successfully"
+        : "Distribution updated successfully";
+
       toast({
         title: "Success",
-        description: "Distribution updated successfully",
+        description: message,
       });
 
       onDistributionUpdated?.();
@@ -173,6 +182,7 @@ export function DistributionEditor({
       });
     } finally {
       setIsSubmitting(false);
+      setIsRegenerating(false);
     }
   };
 
@@ -254,7 +264,7 @@ export function DistributionEditor({
             </span>
           </div>
 
-          <div className="flex items-center gap-2 pt-4">
+          {/* <div className="flex items-center gap-2 pt-4">
             <input
               type="checkbox"
               id="useForTraining"
@@ -285,7 +295,7 @@ export function DistributionEditor({
                 </Tooltip>
               </TooltipProvider>
             </Label>
-          </div>
+          </div> */}
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
@@ -302,7 +312,7 @@ export function DistributionEditor({
             className="bg-[#261436] text-white"
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isSubmitting ? "Creating..." : "Create Persona"}
+            {isSubmitting ? (isRegenerating ? "Regenerating..." : "Creating...") : "Create Persona"}
           </Button>
         </div>
       </div>
@@ -355,7 +365,7 @@ export function DistributionEditor({
             </span>
           </div>
 
-          <div className="flex items-center gap-2 pt-4">
+          {/* <div className="flex items-center gap-2 pt-4">
             <input
               type="checkbox"
               id="useForTraining"
@@ -386,7 +396,7 @@ export function DistributionEditor({
                 </Tooltip>
               </TooltipProvider>
             </Label>
-          </div>
+          </div> */}
         </div>
 
         <DialogFooter>
@@ -403,7 +413,7 @@ export function DistributionEditor({
             className="bg-[#261436] text-white"
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isSubmitting ? "Updating..." : "Update Distribution"}
+            {isSubmitting ? (isRegenerating ? "Regenerating..." : "Updating...") : "Update Distribution"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -159,6 +159,10 @@ function Main() {
   const generateTransactions = async () => {
     if (!selectedPersona) return;
 
+    const months = parseInt(selectedMonths);
+    // Always use a multiple of 100 for batch_size
+    const batch_size = Math.max(1, months) * 100;
+
     console.log("Generating transactions for persona:", selectedPersona);
     setLoading(true);
     try {
@@ -166,7 +170,7 @@ function Main() {
         `${API_BASE_URL}/generate/${selectedPersona}`,
         {
           batch_name: batchName || undefined,
-          months: parseInt(selectedMonths),
+          batch_size,
         }
       );
       console.log("Successfully generated transactions");
@@ -490,14 +494,6 @@ function Main() {
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="text-sm text-[#261436] mt-2">
-                          <Link
-                            href="/personas/create"
-                            className="text-[#261436] hover:underline"
-                          >
-                            Create your own persona →
-                          </Link>
-                        </div>
                       </div>
 
                       <div className="w-1/2 space-y-2">
@@ -515,30 +511,10 @@ function Main() {
                             {selectedMonths} months
                           </SelectTrigger>
                           <SelectContent className="bg-white text-[#261436] border border-gray-300 mt-1 rounded shadow-lg w-full">
-                            <SelectItem
-                              value="3"
-                              className="px-4 py-2 hover:bg-gray-100"
-                            >
-                              3 months
-                            </SelectItem>
-                            <SelectItem
-                              value="6"
-                              className="px-4 py-2 hover:bg-gray-100"
-                            >
-                              6 months
-                            </SelectItem>
-                            <SelectItem
-                              value="12"
-                              className="px-4 py-2 hover:bg-gray-100"
-                            >
-                              12 months
-                            </SelectItem>
-                            <SelectItem
-                              value="24"
-                              className="px-4 py-2 hover:bg-gray-100"
-                            >
-                              24 months
-                            </SelectItem>
+                            <SelectItem value="3" className="px-4 py-2 hover:bg-gray-100">3 months</SelectItem>
+                            <SelectItem value="6" className="px-4 py-2 hover:bg-gray-100">6 months</SelectItem>
+                            <SelectItem value="12" className="px-4 py-2 hover:bg-gray-100">12 months</SelectItem>
+                            <SelectItem value="24" className="px-4 py-2 hover:bg-gray-100">24 months</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

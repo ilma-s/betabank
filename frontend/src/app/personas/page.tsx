@@ -16,7 +16,7 @@ export default function PersonasPage() {
   }
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="bg-[#261436] container mx-auto py-8">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Personas</h1>
         <Link href="/personas/create">
@@ -24,7 +24,9 @@ export default function PersonasPage() {
         </Link>
       </div>
 
-      <PersonaList />
+      <div className="bg-[#261436] container mx-auto py-8">
+        <PersonaList />
+      </div>
     </div>
   );
 }

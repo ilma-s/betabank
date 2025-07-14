@@ -403,9 +403,13 @@ export function TransactionList({
                     className="border-b hover:bg-[#F1E6EA]/50"
                   >
                     <td className="p-3 text-[#261436] font-medium">
-                      {new Date(
-                        transaction.bookingDateTime
-                      ).toLocaleDateString('en-GB')}
+                      {(() => {
+                        const date = new Date(transaction.bookingDateTime);
+                        if (isNaN(date.getTime())) {
+                          return "—";
+                        }
+                        return date.toLocaleDateString('en-GB');
+                      })()}
                     </td>
                     <td className="p-3 text-[#261436] font-medium">
                       {parseFloat(transaction.transactionAmount.amount).toFixed(
@@ -578,7 +582,7 @@ export function TransactionList({
                 className="w-full px-3 py-2 bg-white border border-[#261436]/20 rounded-md text-[#261436] focus:outline-none focus:ring-2 focus:ring-[#261436] focus:border-transparent"
               />
             </div>
-            <div className="flex items-center gap-2">
+            {/* <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 id="useForTraining"
@@ -612,7 +616,7 @@ export function TransactionList({
                   </Tooltip>
                 </TooltipProvider>
               </Label>
-            </div>
+            </div> */}
           </div>
           <DialogFooter className="gap-2 mt-6">
             <Button

@@ -77,7 +77,7 @@ class ExplanationService:
 
         # Detect time clusters
         hours = [d.hour for d in dates]
-        if hours:
+        if hours and len(set(hours)) > 1:
             kde = stats.gaussian_kde(hours)
             hour_range = np.arange(24)
             density = kde(hour_range)

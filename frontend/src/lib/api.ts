@@ -1,7 +1,7 @@
 import { PersonaWithDataset } from '@/types/persona';
 import { Transaction } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8000';
 
 const getToken = () => {
   if (typeof window !== 'undefined') {
@@ -32,7 +32,9 @@ export const getPersonas = async (): Promise<{ personas: PersonaWithDataset[] }>
     },
   });
 
-  return handleResponse(response);
+  const data = await handleResponse(response);
+  // Backend returns personas array directly, so we wrap it
+  return { personas: data };
 };
 
 export const createPersonaWithDistribution = async (

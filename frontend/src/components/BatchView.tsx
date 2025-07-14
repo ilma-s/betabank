@@ -4,12 +4,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BatchAnalytics } from "./BatchAnalytics";
 import { TransactionList } from "./TransactionList";
 import { Button } from "@/components/ui/button";
-import { Download, Settings } from "lucide-react";
+import { Download, Settings, Loader2 } from "lucide-react";
 import { DistributionEditor } from "./DistributionEditor";
 import axios from "axios";
 import { useToast } from "@/components/ui/use-toast";
 import { BatchExplanation } from "./BatchExplanation";
 import { Skeleton } from "./ui/skeleton";
+import { BatchEvaluation } from "./BatchEvaluation";
 
 interface BatchViewProps {
   transactions: Transaction[];
@@ -38,6 +39,7 @@ export function BatchView({
   const [batchExplanation, setBatchExplanation] =
     useState<BatchExplanationData | null>(null);
   const [loadingExplanation, setLoadingExplanation] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   const fetchBatchExplanation = useCallback(async () => {
     setLoadingExplanation(true);
@@ -224,9 +226,24 @@ export function BatchView({
           onClose={() => setShowDistributionEditor(false)}
           onDistributionUpdated={() => {
             setShowDistributionEditor(false);
-            onTransactionUpdated?.();
+            setIsRegenerating(true);
+            // Add a small delay to show the regeneration is happening
+            setTimeout(() => {
+              onTransactionUpdated?.();
+              setIsRegenerating(false);
+            }, 1000);
           }}
         />
+      )}
+
+      {isRegenerating && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 flex flex-col items-center gap-4">
+            <Loader2 className="h-8 w-8 animate-spin text-[#261436]" />
+            <p className="text-lg font-medium text-[#261436]">Regenerating Transactions...</p>
+            <p className="text-sm text-gray-600">Please wait while we update the transaction distribution</p>
+          </div>
+        </div>
       )}
     </div>
   );
