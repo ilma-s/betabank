@@ -168,8 +168,9 @@ class TransactionDataProcessor:
         random.shuffle(balanced)
         return balanced
     
-    def load_data(self, filepath):
-        """Load data from local file only. If the path starts with 's3://synthetic-personas-training-datasets/testing_datasets/', map it to the local directory 'training-datasets/testing-datasets/'."""
+    def load_data(self, filepath, persona_type=None):
+        """Load data from local file only. If the path starts with 's3://synthetic-personas-training-datasets/testing_datasets/', map it to the local directory 'training-datasets/testing-datasets/'.
+        Ensures all target categories are present in one-hot encoding."""
         # Map S3 training dataset paths to local directory
         s3_prefix = 's3://synthetic-personas-training-datasets/testing_datasets/'
         local_prefix = 'training-datasets/testing-datasets/'
@@ -191,8 +192,26 @@ class TransactionDataProcessor:
         df['bookingDateTime'] = pd.to_datetime(df['bookingDateTime'])
         df['timestamp'] = df['bookingDateTime'].astype(np.int64) // 10**9
 
-        # Encode and normalize
+        # --- Ensure all target categories are present in one-hot encoding ---
+        # Get all possible categories from persona_type's default distribution
+        all_categories = None
+        if persona_type is not None:
+            target_dist = self.ensure_category_distribution(persona_type)
+            if target_dist:
+                all_categories = list(target_dist.keys())
+        if all_categories is None:
+            all_categories = sorted(df['category'].unique())
+        # Build the full list of one-hot columns
+        all_category_columns = [f'category_{cat}' for cat in all_categories]
+        # Use CategoricalDtype to ensure all columns are present
+        df['category'] = pd.Categorical(df['category'], categories=all_categories)
         category_dummies = pd.get_dummies(df['category'], prefix='category')
+        # Add missing columns if any
+        for col in all_category_columns:
+            if col not in category_dummies:
+                category_dummies[col] = 0
+        # Reorder columns to match all_category_columns
+        category_dummies = category_dummies[all_category_columns]
         self.category_columns = category_dummies.columns
         self.condition_dim = category_dummies.shape[1]
         print(f"Number of categories: {self.condition_dim}")

@@ -616,7 +616,7 @@ async def generate_transactions(
         model = models.get(model_key)
         
         if not model:
-            X, C = data_processor.load_data(dataset_path)
+            X, C = data_processor.load_data(dataset_path, persona.name)
             input_dim = X.shape[1]  # Number of numerical features
             condition_dim = C.shape[1]  # Number of categories
             tensor_X, tensor_C = torch.FloatTensor(X), torch.FloatTensor(C)
@@ -814,7 +814,7 @@ async def generate_transactions(
             # Load real training data for comparison
             real_transactions = []
             try:
-                X, C = data_processor.load_data(dataset_path)
+                X, C = data_processor.load_data(dataset_path, persona.name)
                 # Convert back to transaction format for evaluation
                 real_data = data_processor.inverse_transform(np.hstack([X, C]))
                 # Use larger subset for better evaluation quality
@@ -1460,7 +1460,7 @@ async def update_persona_distribution(
             model = models.get(model_key)
             
             if not model:
-                X, C = data_processor.load_data(dataset_path)
+                X, C = data_processor.load_data(dataset_path, persona.name)
                 input_dim = X.shape[1]
                 condition_dim = C.shape[1]
                 tensor_X, tensor_C = torch.FloatTensor(X), torch.FloatTensor(C)
@@ -1741,7 +1741,7 @@ async def get_batch_evaluation(
         if persona and persona.config_json.get("dataset_path"):
             try:
                 dataset_path = persona.config_json["dataset_path"]
-                X, C = data_processor.load_data(dataset_path)
+                X, C = data_processor.load_data(dataset_path, persona.name)
                 real_data = data_processor.inverse_transform(np.hstack([X, C]))
                 real_transactions = real_data[:min(len(real_data), 1000)]
             except Exception as e:
